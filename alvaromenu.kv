@@ -1,0 +1,741 @@
+#:kivy 2.0.0
+
+<RootScreenManager>:
+    HomeScreen:
+        name: 'home'
+    MenuScreen:
+        name: 'menu'
+    CouponsScreen:
+        name: 'coupons'
+    SettingsScreen:
+        name: 'settings'
+
+# --- SCREEN HEADER HELPER ---
+<ScreenHeader@BoxLayout>:
+    title: ''
+    subtitle: ''
+    show_back: True
+    size_hint_y: None
+    height: '64dp'
+    padding: ['12dp', '8dp']
+    spacing: '10dp'
+    canvas.before:
+        Color:
+            rgba: 0.12, 0.45, 0.78, 1  # Brand Blue
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    Button:
+        text: '◀ Regresar' if root.show_back else '🍽️ App'
+        size_hint_x: None
+        width: '100dp'
+        background_color: 0, 0, 0, 0.2
+        color: 1, 1, 1, 1
+        font_size: '14sp'
+        bold: True
+        opacity: 1 if root.show_back else 0
+        disabled: not root.show_back
+        on_release: app.go_to_screen('home')
+
+    BoxLayout:
+        orientation: 'vertical'
+        alignment: 'center'
+        Label:
+            text: root.title
+            font_size: '18sp'
+            bold: True
+            color: 1, 1, 1, 1
+            text_size: self.size
+            halign: 'left'
+            valign: 'middle'
+        Label:
+            text: root.subtitle
+            font_size: '12sp'
+            color: 0.85, 0.92, 1, 1
+            text_size: self.size
+            halign: 'left'
+            valign: 'middle'
+
+# --- HOME SCREEN ---
+<HomeScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        canvas.before:
+            Color:
+                rgba: 0.95, 0.96, 0.98, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # App Bar Header
+        BoxLayout:
+            size_hint_y: None
+            height: '80dp'
+            padding: ['16dp', '12dp']
+            canvas.before:
+                Color:
+                    rgba: 0.12, 0.45, 0.78, 1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            
+            BoxLayout:
+                orientation: 'vertical'
+                Label:
+                    text: "🍽️ Menú Álvaro & Pareja"
+                    font_size: '22sp'
+                    bold: True
+                    color: 1, 1, 1, 1
+                    text_size: self.size
+                    halign: 'left'
+                    valign: 'middle'
+                Label:
+                    text: "Planificación semanal personalizada"
+                    font_size: '13sp'
+                    color: 0.85, 0.92, 1, 1
+                    text_size: self.size
+                    halign: 'left'
+                    valign: 'middle'
+
+        ScrollView:
+            do_scroll_x: False
+            BoxLayout:
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
+                padding: '16dp'
+                spacing: '16dp'
+
+                # Welcome Banner Card
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: '110dp'
+                    padding: '16dp'
+                    spacing: '6dp'
+                    canvas.before:
+                        Color:
+                            rgba: 1, 1, 1, 1
+                        RoundedRectangle:
+                            pos: self.pos
+                            size: self.size
+                            radius: [12,]
+                        Color:
+                            rgba: 0.12, 0.45, 0.78, 0.1
+                        RoundedRectangle:
+                            pos: self.pos
+                            size: self.size
+                            radius: [12,]
+
+                    Label:
+                        text: "¡Bienvenidos Álvaro y Pareja! 👋"
+                        font_size: '18sp'
+                        bold: True
+                        color: 0.12, 0.45, 0.78, 1
+                        size_hint_y: None
+                        height: '26dp'
+                        text_size: self.size
+                        halign: 'left'
+                    
+                    Label:
+                        text: "Generad vuestro menú semanal, usad vetos si algún plato no os apetece y gestionad vuestras invitaciones de comida fuera."
+                        font_size: '13sp'
+                        color: 0.3, 0.35, 0.4, 1
+                        text_size: self.size
+                        halign: 'left'
+
+                # Vetos Status Summary Card
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: '100dp'
+                    padding: '14dp'
+                    spacing: '6dp'
+                    canvas.before:
+                        Color:
+                            rgba: 1, 1, 1, 1
+                        RoundedRectangle:
+                            pos: self.pos
+                            size: self.size
+                            radius: [12,]
+
+                    Label:
+                        text: "🛑 Estado de Vetos Semanales (Máx 2 cada uno)"
+                        font_size: '14sp'
+                        bold: True
+                        color: 0.2, 0.25, 0.3, 1
+                        size_hint_y: None
+                        height: '20dp'
+                        text_size: self.size
+                        halign: 'left'
+
+                    BoxLayout:
+                        spacing: '12dp'
+                        
+                        # Álvaro Vetos
+                        BoxLayout:
+                            padding: '8dp'
+                            canvas.before:
+                                Color:
+                                    rgba: 0.93, 0.96, 1, 1
+                                RoundedRectangle:
+                                    pos: self.pos
+                                    size: self.size
+                                    radius: [8,]
+                            Label:
+                                id: lbl_alvaro_vetos
+                                text: "👤 Álvaro: 0/2 usados"
+                                font_size: '13sp'
+                                bold: True
+                                color: 0.12, 0.45, 0.78, 1
+
+                        # Pareja Vetos
+                        BoxLayout:
+                            padding: '8dp'
+                            canvas.before:
+                                Color:
+                                    rgba: 0.98, 0.94, 0.96, 1
+                                RoundedRectangle:
+                                    pos: self.pos
+                                    size: self.size
+                                    radius: [8,]
+                            Label:
+                                id: lbl_pareja_vetos
+                                text: "👩‍🦰 Pareja: 0/2 usados"
+                                font_size: '13sp'
+                                bold: True
+                                color: 0.8, 0.2, 0.5, 1
+
+                # Alert Coupons Card (Dynamic)
+                BoxLayout:
+                    id: coupon_alert_box
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: '80dp'
+                    padding: '12dp'
+                    spacing: '4dp'
+                    canvas.before:
+                        Color:
+                            rgba: 1, 0.95, 0.88, 1
+                        RoundedRectangle:
+                            pos: self.pos
+                            size: self.size
+                            radius: [10,]
+                    Label:
+                        id: lbl_coupon_alert_title
+                        text: "🎟️ Alerta de Invitaciones Proximas a Caducar"
+                        font_size: '14sp'
+                        bold: True
+                        color: 0.85, 0.4, 0, 1
+                        size_hint_y: None
+                        height: '20dp'
+                        text_size: self.size
+                        halign: 'left'
+                    Label:
+                        id: lbl_coupon_alert_desc
+                        text: "No hay cupones urgentes esta semana."
+                        font_size: '12sp'
+                        color: 0.4, 0.3, 0.2, 1
+                        text_size: self.size
+                        halign: 'left'
+
+                # Main Action Buttons
+                Label:
+                    text: "Menú y Funcionalidades"
+                    font_size: '15sp'
+                    bold: True
+                    color: 0.2, 0.25, 0.3, 1
+                    size_hint_y: None
+                    height: '24dp'
+                    text_size: self.size
+                    halign: 'left'
+
+                Button:
+                    text: "📅 Ver y Regenerar Menú Semanal"
+                    size_hint_y: None
+                    height: '56dp'
+                    font_size: '16sp'
+                    bold: True
+                    background_normal: ''
+                    background_color: 0.12, 0.45, 0.78, 1
+                    on_release: app.go_to_screen('menu')
+
+                Button:
+                    text: "🎟️ Cupones e Invitaciones de Comida Fuera"
+                    size_hint_y: None
+                    height: '56dp'
+                    font_size: '16sp'
+                    bold: True
+                    background_normal: ''
+                    background_color: 0.2, 0.65, 0.45, 1
+                    on_release: app.go_to_screen('coupons')
+
+                Button:
+                    text: "⚙️ Configuración (Google Sheet & SMTP Email)"
+                    size_hint_y: None
+                    height: '56dp'
+                    font_size: '16sp'
+                    bold: True
+                    background_normal: ''
+                    background_color: 0.35, 0.4, 0.45, 1
+                    on_release: app.go_to_screen('settings')
+
+
+# --- MENU CALENDAR SCREEN ---
+<MenuScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        canvas.before:
+            Color:
+                rgba: 0.95, 0.96, 0.98, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        ScreenHeader:
+            title: '📅 Menú Semanal (L-D)'
+            subtitle: 'Almuerzos, cenas y sustituciones con veto'
+            show_back: True
+
+        # Action Bar (Generate / Manual Regenerate Status)
+        BoxLayout:
+            size_hint_y: None
+            height: '54dp'
+            padding: ['12dp', '6dp']
+            spacing: '10dp'
+            canvas.before:
+                Color:
+                    rgba: 0.9, 0.93, 0.97, 1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+
+            Button:
+                id: btn_regenerate_menu
+                text: "🔄 Regenerar Menú (1/1)"
+                font_size: '13sp'
+                bold: True
+                background_normal: ''
+                background_color: 0.12, 0.45, 0.78, 1
+                on_release: root.on_click_regenerate()
+
+            Button:
+                text: "📧 Enviar por Email"
+                size_hint_x: None
+                width: '140dp'
+                font_size: '13sp'
+                bold: True
+                background_normal: ''
+                background_color: 0.2, 0.6, 0.4, 1
+                on_release: root.on_click_send_email()
+
+        ScrollView:
+            do_scroll_x: False
+            BoxLayout:
+                id: calendar_container
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
+                padding: '12dp'
+                spacing: '14dp'
+
+
+# --- DAY CARD ITEM (Used inside MenuScreen Calendar) ---
+<DayMenuCard@BoxLayout>:
+    day_name: 'Lunes'
+    comida_name: 'Comida'
+    comida_ing: ''
+    cena_name: 'Cena'
+    cena_ing: ''
+    orientation: 'vertical'
+    size_hint_y: None
+    height: '190dp'
+    padding: '12dp'
+    spacing: '8dp'
+    canvas.before:
+        Color:
+            rgba: 1, 1, 1, 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [10,]
+        Color:
+            rgba: 0.85, 0.88, 0.92, 1
+        Line:
+            rounded_rectangle: [self.x, self.y, self.width, self.height, 10]
+            width: 1
+
+    # Day Header
+    BoxLayout:
+        size_hint_y: None
+        height: '24dp'
+        Label:
+            text: root.day_name
+            font_size: '16sp'
+            bold: True
+            color: 0.12, 0.45, 0.78, 1
+            text_size: self.size
+            halign: 'left'
+            valign: 'middle'
+
+    # Comida Slot
+    BoxLayout:
+        spacing: '8dp'
+        padding: ['6dp', '4dp']
+        canvas.before:
+            Color:
+                rgba: 0.96, 0.98, 1, 1
+            RoundedRectangle:
+                pos: self.pos
+                size: self.size
+                radius: [6,]
+        BoxLayout:
+            orientation: 'vertical'
+            Label:
+                text: "☀️ Comida: " + root.comida_name
+                font_size: '14sp'
+                bold: True
+                color: 0.15, 0.2, 0.25, 1
+                text_size: self.size
+                halign: 'left'
+                valign: 'middle'
+            Label:
+                text: root.comida_ing if root.comida_ing else "Sin lista de ingredientes"
+                font_size: '11sp'
+                color: 0.5, 0.55, 0.6, 1
+                text_size: self.size
+                halign: 'left'
+                valign: 'middle'
+        Button:
+            text: "🛑 Veto"
+            size_hint_x: None
+            width: '64dp'
+            font_size: '12sp'
+            bold: True
+            background_normal: ''
+            background_color: 0.85, 0.25, 0.2, 1
+            on_release: app.open_veto_dialog(root.day_name, 'Comida')
+
+    # Cena Slot
+    BoxLayout:
+        spacing: '8dp'
+        padding: ['6dp', '4dp']
+        canvas.before:
+            Color:
+                rgba: 0.98, 0.95, 0.98, 1
+            RoundedRectangle:
+                pos: self.pos
+                size: self.size
+                radius: [6,]
+        BoxLayout:
+            orientation: 'vertical'
+            Label:
+                text: "🌙 Cena: " + root.cena_name
+                font_size: '14sp'
+                bold: True
+                color: 0.15, 0.2, 0.25, 1
+                text_size: self.size
+                halign: 'left'
+                valign: 'middle'
+            Label:
+                text: root.cena_ing if root.cena_ing else "Sin lista de ingredientes"
+                font_size: '11sp'
+                color: 0.5, 0.55, 0.6, 1
+                text_size: self.size
+                halign: 'left'
+                valign: 'middle'
+        Button:
+            text: "🛑 Veto"
+            size_hint_x: None
+            width: '64dp'
+            font_size: '12sp'
+            bold: True
+            background_normal: ''
+            background_color: 0.85, 0.25, 0.2, 1
+            on_release: app.open_veto_dialog(root.day_name, 'Cena')
+
+
+# --- COUPONS SCREEN ---
+<CouponsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        canvas.before:
+            Color:
+                rgba: 0.95, 0.96, 0.98, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        ScreenHeader:
+            title: '🎟️ Invitaciones y Cupones'
+            subtitle: 'Comidas fuera registradas para Álvaro y Pareja'
+            show_back: True
+
+        # Filter & Add Bar
+        BoxLayout:
+            size_hint_y: None
+            height: '50dp'
+            padding: ['10dp', '4dp']
+            spacing: '8dp'
+
+            Button:
+                id: btn_filter_todos
+                text: "👥 Todos"
+                font_size: '13sp'
+                bold: True
+                background_normal: ''
+                background_color: 0.12, 0.45, 0.78, 1
+                on_release: root.set_filter('todos')
+
+            Button:
+                id: btn_filter_alvaro
+                text: "👤 Álvaro"
+                font_size: '13sp'
+                background_normal: ''
+                background_color: 0.5, 0.55, 0.6, 1
+                on_release: root.set_filter('Álvaro')
+
+            Button:
+                id: btn_filter_pareja
+                text: "👩‍🦰 Pareja"
+                font_size: '13sp'
+                background_normal: ''
+                background_color: 0.5, 0.55, 0.6, 1
+                on_release: root.set_filter('Pareja')
+
+            Button:
+                text: "➕ Nuevo"
+                size_hint_x: None
+                width: '80dp'
+                font_size: '13sp'
+                bold: True
+                background_normal: ''
+                background_color: 0.2, 0.65, 0.45, 1
+                on_release: root.open_add_coupon_modal()
+
+        ScrollView:
+            do_scroll_x: False
+            BoxLayout:
+                id: coupons_container
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
+                padding: '12dp'
+                spacing: '12dp'
+
+
+# --- SETTINGS SCREEN ---
+<SettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        canvas.before:
+            Color:
+                rgba: 0.95, 0.96, 0.98, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        ScreenHeader:
+            title: '⚙️ Configuración de la App'
+            subtitle: 'Google Sheets CSV & Servidor SMTP'
+            show_back: True
+
+        ScrollView:
+            do_scroll_x: False
+            BoxLayout:
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
+                padding: '16dp'
+                spacing: '16dp'
+
+                # Google Sheet CSV Section
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: '170dp'
+                    padding: '14dp'
+                    spacing: '8dp'
+                    canvas.before:
+                        Color:
+                            rgba: 1, 1, 1, 1
+                        RoundedRectangle:
+                            pos: self.pos
+                            size: self.size
+                            radius: [10,]
+
+                    Label:
+                        text: "📊 Google Sheet Publicada (CSV)"
+                        font_size: '15sp'
+                        bold: True
+                        color: 0.12, 0.45, 0.78, 1
+                        size_hint_y: None
+                        height: '22dp'
+                        text_size: self.size
+                        halign: 'left'
+
+                    Label:
+                        text: "URL pública de exportación CSV o ID de la hoja:"
+                        font_size: '12sp'
+                        color: 0.4, 0.45, 0.5, 1
+                        size_hint_y: None
+                        height: '18dp'
+                        text_size: self.size
+                        halign: 'left'
+
+                    TextInput:
+                        id: txt_sheet_url
+                        hint_text: "https://docs.google.com/spreadsheets/d/ID/export?format=csv"
+                        size_hint_y: None
+                        height: '40dp'
+                        multiline: False
+                        font_size: '12sp'
+
+                    BoxLayout:
+                        spacing: '10dp'
+                        Button:
+                            text: "💾 Guardar y Probar CSV"
+                            font_size: '13sp'
+                            bold: True
+                            background_normal: ''
+                            background_color: 0.12, 0.45, 0.78, 1
+                            on_release: root.test_and_save_sheet_url()
+
+                # SMTP Email Section
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: '340dp'
+                    padding: '14dp'
+                    spacing: '8dp'
+                    canvas.before:
+                        Color:
+                            rgba: 1, 1, 1, 1
+                        RoundedRectangle:
+                            pos: self.pos
+                            size: self.size
+                            radius: [10,]
+
+                    Label:
+                        text: "📧 Servidor SMTP (Notificaciones de Sábado)"
+                        font_size: '15sp'
+                        bold: True
+                        color: 0.12, 0.45, 0.78, 1
+                        size_hint_y: None
+                        height: '22dp'
+                        text_size: self.size
+                        halign: 'left'
+
+                    GridLayout:
+                        cols: 2
+                        spacing: '8dp'
+                        size_hint_y: None
+                        height: '200dp'
+
+                        Label:
+                            text: "Servidor SMTP:"
+                            font_size: '12sp'
+                            color: 0.2, 0.2, 0.2, 1
+                            halign: 'right'
+                        TextInput:
+                            id: txt_smtp_host
+                            hint_text: "smtp.gmail.com"
+                            multiline: False
+                            font_size: '12sp'
+
+                        Label:
+                            text: "Puerto SMTP:"
+                            font_size: '12sp'
+                            color: 0.2, 0.2, 0.2, 1
+                            halign: 'right'
+                        TextInput:
+                            id: txt_smtp_port
+                            hint_text: "587"
+                            multiline: False
+                            font_size: '12sp'
+
+                        Label:
+                            text: "Usuario/Email SMTP:"
+                            font_size: '12sp'
+                            color: 0.2, 0.2, 0.2, 1
+                            halign: 'right'
+                        TextInput:
+                            id: txt_smtp_user
+                            hint_text: "tu_correo@gmail.com"
+                            multiline: False
+                            font_size: '12sp'
+
+                        Label:
+                            text: "Contraseña / App Pass:"
+                            font_size: '12sp'
+                            color: 0.2, 0.2, 0.2, 1
+                            halign: 'right'
+                        TextInput:
+                            id: txt_smtp_password
+                            password: True
+                            hint_text: "••••••••"
+                            multiline: False
+                            font_size: '12sp'
+
+                        Label:
+                            text: "Destinatarios (separados por coma):"
+                            font_size: '12sp'
+                            color: 0.2, 0.2, 0.2, 1
+                            halign: 'right'
+                        TextInput:
+                            id: txt_recipients
+                            hint_text: "alvaro@email.com, pareja@email.com"
+                            multiline: False
+                            font_size: '12sp'
+
+                    BoxLayout:
+                        spacing: '10dp'
+                        Button:
+                            text: "💾 Guardar Ajustes SMTP"
+                            font_size: '13sp'
+                            bold: True
+                            background_normal: ''
+                            background_color: 0.2, 0.6, 0.4, 1
+                            on_release: root.save_smtp_settings()
+
+                        Button:
+                            text: "✉️ Enviar Email de Prueba"
+                            font_size: '13sp'
+                            bold: True
+                            background_normal: ''
+                            background_color: 0.85, 0.5, 0.1, 1
+                            on_release: root.send_test_email()
+
+                # Reset / Admin Maintenance Section
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: '110dp'
+                    padding: '14dp'
+                    spacing: '8dp'
+                    canvas.before:
+                        Color:
+                            rgba: 1, 1, 1, 1
+                        RoundedRectangle:
+                            pos: self.pos
+                            size: self.size
+                            radius: [10,]
+
+                    Label:
+                        text: "🔧 Mantenimiento y Reinicio de Vetos"
+                        font_size: '14sp'
+                        bold: True
+                        color: 0.2, 0.25, 0.3, 1
+                        size_hint_y: None
+                        height: '20dp'
+                        text_size: self.size
+                        halign: 'left'
+
+                    Button:
+                        text: "🔄 Reiniciar Vetos Semanales Manualmente (0/2)"
+                        font_size: '13sp'
+                        bold: True
+                        background_normal: ''
+                        background_color: 0.7, 0.3, 0.3, 1
+                        on_release: root.reset_vetos_manually()

@@ -1,0 +1,395 @@
+{
+  "settings": {
+    "sheet_url": "https://docs.google.com/spreadsheets/d/163wHVPAMQbmkS1PqNZvLc-jDLzb2F9iiYF0FhM3jaU0/edit?gid=83672031#gid=83672031",
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_user": "alv.mmartin@gmail.com",
+    "smtp_password": "",
+    "smtp_use_tls": true,
+    "recipients": "alv.mmartin@gmail.com, absaladomoreno@gmail.com",
+    "auto_email_enabled": true
+  },
+  "dishes": [
+    {
+      "id": "1",
+      "name": "Huevo y pimiento",
+      "type": "ambas",
+      "ingredients": ""
+    },
+    {
+      "id": "2",
+      "name": "Judías verdes y patatas cocidas",
+      "type": "ambas",
+      "ingredients": ""
+    },
+    {
+      "id": "3",
+      "name": "Tortilla francesa y ensalada",
+      "type": "cena",
+      "ingredients": ""
+    },
+    {
+      "id": "4",
+      "name": "Lentejas",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "5",
+      "name": "Tortitas aguacate",
+      "type": "cena",
+      "ingredients": ""
+    },
+    {
+      "id": "6",
+      "name": "Puré puerros y calabacín",
+      "type": "cena",
+      "ingredients": ""
+    },
+    {
+      "id": "7",
+      "name": "Ensalada de pasta",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "8",
+      "name": "Ensalada pimientos y Melva",
+      "type": "cena",
+      "ingredients": ""
+    },
+    {
+      "id": "9",
+      "name": "Pollo/Lomo y gnocchi",
+      "type": "ambas",
+      "ingredients": ""
+    },
+    {
+      "id": "10",
+      "name": "Ensalada de garbanzos",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "11",
+      "name": "Ensalada de lentejas",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "12",
+      "name": "Patatas con carne",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "13",
+      "name": "Garbanzos y calabacín al curry",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "14",
+      "name": "Fajitas de pollo",
+      "type": "cena",
+      "ingredients": ""
+    },
+    {
+      "id": "15",
+      "name": "Pollo asado",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "16",
+      "name": "Pollo al curry",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "17",
+      "name": "Pasta boloñesa",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "18",
+      "name": "Muslitos guisados",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "19",
+      "name": "Chistorra y puré de patata",
+      "type": "ambas",
+      "ingredients": ""
+    },
+    {
+      "id": "20",
+      "name": "Puchero",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "21",
+      "name": "Pisto con huevo",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "22",
+      "name": "Noodles con verdura",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "23",
+      "name": "Salmón con boniato/patatas y brócoli",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "24",
+      "name": "Gyoza",
+      "type": "cena",
+      "ingredients": ""
+    },
+    {
+      "id": "25",
+      "name": "Fideos chinos",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "26",
+      "name": "Tuna melt",
+      "type": "cena",
+      "ingredients": ""
+    },
+    {
+      "id": "27",
+      "name": "Sandwich mixto",
+      "type": "cena",
+      "ingredients": ""
+    },
+    {
+      "id": "28",
+      "name": "Ensaladilla",
+      "type": "ambas",
+      "ingredients": ""
+    },
+    {
+      "id": "29",
+      "name": "Pasta cherrys feta",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "30",
+      "name": "Fajitas falafel",
+      "type": "cena",
+      "ingredients": ""
+    },
+    {
+      "id": "31",
+      "name": "Falafel con yogur",
+      "type": "cena",
+      "ingredients": ""
+    },
+    {
+      "id": "32",
+      "name": "Croquetas",
+      "type": "ambas",
+      "ingredients": ""
+    },
+    {
+      "id": "33",
+      "name": "Albóndigas",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "34",
+      "name": "Ensalada atún, huevo y patata",
+      "type": "ambas",
+      "ingredients": ""
+    },
+    {
+      "id": "35",
+      "name": "espinacas con garbanzos",
+      "type": "comida",
+      "ingredients": ""
+    },
+    {
+      "id": "36",
+      "name": "gulas con gambas",
+      "type": "cena",
+      "ingredients": ""
+    }
+  ],
+  "current_menu": [
+    {
+      "day": "Lunes",
+      "comida": {
+        "id": "34",
+        "name": "Ensalada atún, huevo y patata",
+        "type": "ambas",
+        "ingredients": "Patata cocida, atún, huevos cocidos, cebolla, aceite, vinagre"
+      },
+      "cena": {
+        "id": "36",
+        "name": "Gulas con gambas",
+        "type": "cena",
+        "ingredients": "Gulas, gambas peladas, ajo laminado, guindilla, aceite de oliva"
+      }
+    },
+    {
+      "day": "Martes",
+      "comida": {
+        "id": "17",
+        "name": "Pasta boloñesa",
+        "type": "comida",
+        "ingredients": "Pasta, carne picada, tomate frito, cebolla, orégano"
+      },
+      "cena": {
+        "id": "19",
+        "name": "Chistorra y puré de patata",
+        "type": "ambas",
+        "ingredients": "Chistorra a la plancha, puré de patata casero"
+      }
+    },
+    {
+      "day": "Miércoles",
+      "comida": {
+        "id": "18",
+        "name": "Muslitos guisados",
+        "type": "comida",
+        "ingredients": "Muslos de pollo, zanahoria, guisantes, patata, caldo"
+      },
+      "cena": {
+        "id": "28",
+        "name": "Ensaladilla",
+        "type": "ambas",
+        "ingredients": "Patatas, zanahoria, atún, guisantes, huevos cocidos, mayonesa"
+      }
+    },
+    {
+      "day": "Jueves",
+      "comida": {
+        "id": "2",
+        "name": "Judías verdes y patatas cocidas",
+        "type": "ambas",
+        "ingredients": "Judías verdes, patatas, aceite de oliva, vinagre"
+      },
+      "cena": {
+        "id": "14",
+        "name": "Fajitas de pollo",
+        "type": "cena",
+        "ingredients": ""
+      }
+    },
+    {
+      "day": "Viernes",
+      "comida": {
+        "id": "10",
+        "name": "Ensalada de garbanzos",
+        "type": "comida",
+        "ingredients": "Garbanzos cocidos, pimiento, tomate, cebolla, atún"
+      },
+      "cena": {
+        "id": "6",
+        "name": "Puré puerros y calabacín",
+        "type": "cena",
+        "ingredients": "Puerros, calabacín, patata, aceite, quesito"
+      }
+    },
+    {
+      "day": "Sábado",
+      "comida": {
+        "id": "16",
+        "name": "Pollo al curry",
+        "type": "comida",
+        "ingredients": "Pechuga de pollo, cebolla, curry, nata o leche de coco, arroz"
+      },
+      "cena": {
+        "id": "24",
+        "name": "Gyoza",
+        "type": "cena",
+        "ingredients": "Gyozas de carne o verdura, salsa de soja y vinagre de arroz"
+      }
+    },
+    {
+      "day": "Domingo",
+      "comida": {
+        "id": "21",
+        "name": "Pisto con huevo",
+        "type": "comida",
+        "ingredients": "Calabacín, pimiento, tomate, cebolla, huevos fritos o escalfados"
+      },
+      "cena": {
+        "id": "1",
+        "name": "Huevo y pimiento",
+        "type": "ambas",
+        "ingredients": "Huevos, pimientos, aceite, sal"
+      }
+    }
+  ],
+  "vetos": {
+    "alvaro_used": 0,
+    "ana_used": 1,
+    "pareja_used": 1,
+    "history": [
+      {
+        "user": "Ana",
+        "day": "Jueves",
+        "meal_type": "Cena",
+        "old_dish": "Croquetas",
+        "new_dish": "Fajitas de pollo",
+        "timestamp": "2026-09-27 18:30"
+      }
+    ]
+  },
+  "coupons": [
+    {
+      "id": "coupon-demo-1",
+      "user": "Álvaro",
+      "title": "Cena Romántica de Sushi",
+      "restaurant": "Sushita Club",
+      "expiration_date": "2026-10-15",
+      "notes": "Cupón de cumpleaños para 2 personas.",
+      "status": "pendiente"
+    },
+    {
+      "id": "coupon-demo-2",
+      "user": "Pareja",
+      "title": "2x1 en Hamburguesas Gourmet",
+      "restaurant": "Goiko Grill",
+      "expiration_date": "2026-10-02",
+      "notes": "Válido para cenar en local de lunes a jueves.",
+      "status": "pendiente"
+    }
+  ],
+  "generation_meta": {
+    "last_auto_gen_week": "",
+    "manual_regens_this_week": 0,
+    "last_manual_gen_date": ""
+  },
+  "freezer": {
+    "items": {
+      "Falafel": true,
+      "Croquetas": true,
+      "Albondigas": true,
+      "Filetes de pollo": true,
+      "Alitas de pollo": true,
+      "Gambas": true
+    },
+    "freezer_only_dishes": [
+      "Lentejas",
+      "Puchero",
+      "Albóndigas",
+      "Croquetas",
+      "Garbanzos y calabacín al curry",
+      "Muslitos guisados"
+    ]
+  }
+}
