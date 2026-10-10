@@ -20,9 +20,13 @@ def generate_menu_html(menu_data, title="Menú Semanal para Álvaro y Ana"):
         cena_name = cena.get("name", "No asignado")
         cena_ing = cena.get("ingredients", "")
 
+        is_h = entry.get("is_holiday", False)
+        h_name = entry.get("holiday_name", "")
+        h_badge = f'<br><span style="color: #D97706; font-size: 11px; font-weight: normal;">🎉 {h_name}</span>' if is_h and h_name else ''
+
         html_rows += f"""
         <tr style="border-bottom: 1px solid #E2E8F0;">
-            <td style="padding: 12px; font-weight: bold; color: #2B6CB0; background-color: #EDF2F7; text-align: center;">{day}</td>
+            <td style="padding: 12px; font-weight: bold; color: #2B6CB0; background-color: {'#FEF3C7' if is_h else '#EDF2F7'}; text-align: center;">{day}{h_badge}</td>
             <td style="padding: 12px; vertical-align: top;">
                 <div style="font-weight: bold; color: #2D3748; font-size: 15px;">☀️ {comida_name}</div>
                 <div style="font-size: 12px; color: #718096; margin-top: 4px;"><em>Ingredientes:</em> {comida_ing}</div>
@@ -87,7 +91,10 @@ def generate_menu_text(menu_data):
         day = entry.get("day", "")
         comida = entry.get("comida", {}).get("name", "N/A")
         cena = entry.get("cena", {}).get("name", "N/A")
-        text += f"[{day}]\n  - Comida: {comida}\n  - Cena:   {cena}\n\n"
+        is_h = entry.get("is_holiday", False)
+        h_name = entry.get("holiday_name", "")
+        day_tag = f"[{day} - 🎉 FESTIVO: {h_name}]" if is_h and h_name else f"[{day}]"
+        text += f"{day_tag}\n  - Comida: {comida}\n  - Cena:   {cena}\n\n"
     text += "Recuerda: Tenéis 2 vetos semanales cada uno disponibles en la App.\n"
     return text
 

@@ -5,10 +5,16 @@ from datetime import datetime, timedelta
 
 from storage_manager import StorageManager
 from csv_loader import normalize_sheet_url, normalize_meal_type, SAMPLE_DISHES
-from menu_generator import generate_weekly_menu, regenerate_menu_manually, find_alternative_dish, filter_dishes_by_freezer
+from menu_generator import (
+    generate_weekly_menu, regenerate_menu_manually, 
+    find_alternative_dish, filter_dishes_by_freezer, is_elaborate_dish
+)
 from veto_manager import apply_veto, can_user_veto, reset_weekly_vetos, get_veto_window_status, VETO_LIMIT_PER_PERSON
 from coupon_manager import create_coupon, add_coupon, toggle_coupon_status, check_expiration_warning, get_expiring_coupons_alert
 from emailer import generate_menu_html, generate_menu_text
+from calendar_loader import parse_ics_datetime, get_events_for_menu_week
+from holidays_manager import get_holiday_name, is_festive_or_weekend
+from calendar_exporter import generate_menu_ics, get_google_calendar_url
 
 class TestAlvaroMenuApp(unittest.TestCase):
     
@@ -145,6 +151,50 @@ class TestAlvaroMenuApp(unittest.TestCase):
         names2 = [d["name"] for d in filtered2]
         self.assertIn("Fajitas falafel", names2)
         self.assertIn("Falafel con yogur", names2)
+
+    def test_calendar_loader(self):
+        dt = parse_ics_datetime("20261018T100000Z")
+        self.assertIsNotNone(dt)
+        self.assertEqual(dt.year, 2026)
+        self.assertEqual(dt.month, 10)
+        self.assertEqual(dt.day, 18)
+
+        # Eventos para la semana del menú
+        sat = datetime(2026, 10, 10, 12, 0)
+        sample_events = [
+            {"summary": "Cena amigos", "start": datetime(2026, 10, 13, 21, 0), "is_all_day": False}
+        ]
+        week_map = get_events_for_menu_week(sample_events, now=sat)
+        self.assertIn("Martes", week_map)
+        self.assertEqual(len(week_map["Martes"]["events"]), 1)
+        self.assertEqual(week_map["Martes"]["events"][0]["summary"], "Cena amigos")
+
+    def test_holidays_and_elaborate_dishes(self):
+        from datetime import date
+        oct_12 = date(2026, 10, 12)
+        h_name = get_holiday_name(oct_12)
+        self.assertIsNotNone(h_name)
+        self.assertIn("Hispanidad", h_name)
+
+        is_festive, desc = is_festive_or_weekend(oct_12)
+        self.assertTrue(is_festive)
+
+        # Comprobación de plato elaborado vs ensalada
+        puchero = {"name": "Puchero", "ingredients": "Garbanzos, ternera, tocino"}
+        ensalada = {"name": "Ensalada de pasta", "ingredients": "Pasta, atún, maíz"}
+        self.assertTrue(is_elaborate_dish(puchero))
+        self.assertFalse(is_elaborate_dish(ensalada))
+
+    def test_calendar_exporter(self):
+        menu = generate_weekly_menu(SAMPLE_DISHES)
+        ics_content = generate_menu_ics(menu)
+        self.assertIn("BEGIN:VCALENDAR", ics_content)
+        self.assertIn("END:VCALENDAR", ics_content)
+        self.assertEqual(ics_content.count("BEGIN:VEVENT"), 14)
+
+        url = get_google_calendar_url("☀️ Comida: Lentejas", "2026-10-12", 14)
+        self.assertIn("calendar.google.com", url)
+        self.assertIn("20261012T140000", url)
 
 if __name__ == "__main__":
     unittest.main()

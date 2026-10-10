@@ -7,7 +7,8 @@
     "smtp_password": "",
     "smtp_use_tls": true,
     "recipients": "alv.mmartin@gmail.com, absaladomoreno@gmail.com",
-    "auto_email_enabled": true
+    "auto_email_enabled": true,
+    "calendar_ics_url": "https://calendar.google.com/calendar/ical/e43d364af3e67d36a6196faa32b2ad337bb75593ff2c5c985f8f19251e3addcf%40group.calendar.google.com/private-02521b59f125507e462eda8a50fe0c18/basic.ics"
   },
   "dishes": [
     {
@@ -225,119 +226,165 @@
       "name": "gulas con gambas",
       "type": "cena",
       "ingredients": ""
+    },
+    {
+      "id": "37",
+      "name": "Sopa",
+      "type": "cena",
+      "ingredients": ""
+    },
+    {
+      "id": "38",
+      "name": "Salmorejo",
+      "type": "ambas",
+      "ingredients": ""
+    },
+    {
+      "id": "39",
+      "name": "Crema calabaza",
+      "type": "cena",
+      "ingredients": ""
     }
   ],
   "current_menu": [
     {
       "day": "Lunes",
       "comida": {
-        "id": "34",
-        "name": "Ensalada atún, huevo y patata",
-        "type": "ambas",
-        "ingredients": "Patata cocida, atún, huevos cocidos, cebolla, aceite, vinagre"
-      },
-      "cena": {
-        "id": "36",
-        "name": "Gulas con gambas",
-        "type": "cena",
-        "ingredients": "Gulas, gambas peladas, ajo laminado, guindilla, aceite de oliva"
-      }
-    },
-    {
-      "day": "Martes",
-      "comida": {
         "id": "17",
         "name": "Pasta boloñesa",
         "type": "comida",
-        "ingredients": "Pasta, carne picada, tomate frito, cebolla, orégano"
+        "ingredients": ""
       },
       "cena": {
         "id": "19",
         "name": "Chistorra y puré de patata",
         "type": "ambas",
-        "ingredients": "Chistorra a la plancha, puré de patata casero"
-      }
-    },
-    {
-      "day": "Miércoles",
-      "comida": {
-        "id": "18",
-        "name": "Muslitos guisados",
-        "type": "comida",
-        "ingredients": "Muslos de pollo, zanahoria, guisantes, patata, caldo"
+        "ingredients": ""
       },
-      "cena": {
-        "id": "28",
-        "name": "Ensaladilla",
-        "type": "ambas",
-        "ingredients": "Patatas, zanahoria, atún, guisantes, huevos cocidos, mayonesa"
-      }
+      "date": "2026-10-12",
+      "date_str": "12/10",
+      "is_holiday": true,
+      "holiday_name": "Fiesta Nacional de España (Día de la Hispanidad)"
     },
     {
-      "day": "Jueves",
+      "day": "Martes",
       "comida": {
-        "id": "2",
-        "name": "Judías verdes y patatas cocidas",
+        "id": "1",
+        "name": "Huevo y pimiento",
         "type": "ambas",
-        "ingredients": "Judías verdes, patatas, aceite de oliva, vinagre"
+        "ingredients": ""
       },
       "cena": {
         "id": "14",
         "name": "Fajitas de pollo",
         "type": "cena",
         "ingredients": ""
-      }
+      },
+      "date": "2026-10-13",
+      "date_str": "13/10",
+      "is_holiday": false,
+      "holiday_name": null
+    },
+    {
+      "day": "Miércoles",
+      "comida": {
+        "id": "22",
+        "name": "Noodles con verdura",
+        "type": "comida",
+        "ingredients": ""
+      },
+      "cena": {
+        "id": "31",
+        "name": "Falafel con yogur",
+        "type": "cena",
+        "ingredients": ""
+      },
+      "date": "2026-10-14",
+      "date_str": "14/10",
+      "is_holiday": false,
+      "holiday_name": null
+    },
+    {
+      "day": "Jueves",
+      "comida": {
+        "id": "12",
+        "name": "Patatas con carne",
+        "type": "comida",
+        "ingredients": ""
+      },
+      "cena": {
+        "id": "34",
+        "name": "Ensalada atún, huevo y patata",
+        "type": "ambas",
+        "ingredients": ""
+      },
+      "date": "2026-10-15",
+      "date_str": "15/10",
+      "is_holiday": false,
+      "holiday_name": null
     },
     {
       "day": "Viernes",
       "comida": {
-        "id": "10",
-        "name": "Ensalada de garbanzos",
+        "id": "21",
+        "name": "Pisto con huevo",
         "type": "comida",
-        "ingredients": "Garbanzos cocidos, pimiento, tomate, cebolla, atún"
+        "ingredients": ""
       },
       "cena": {
-        "id": "6",
-        "name": "Puré puerros y calabacín",
-        "type": "cena",
-        "ingredients": "Puerros, calabacín, patata, aceite, quesito"
-      }
+        "id": "2",
+        "name": "Judías verdes y patatas cocidas",
+        "type": "ambas",
+        "ingredients": ""
+      },
+      "date": "2026-10-16",
+      "date_str": "16/10",
+      "is_holiday": false,
+      "holiday_name": null
     },
     {
       "day": "Sábado",
       "comida": {
-        "id": "16",
-        "name": "Pollo al curry",
+        "id": "4",
+        "name": "Lentejas",
         "type": "comida",
-        "ingredients": "Pechuga de pollo, cebolla, curry, nata o leche de coco, arroz"
+        "ingredients": ""
       },
       "cena": {
-        "id": "24",
-        "name": "Gyoza",
+        "id": "37",
+        "name": "Sopa",
         "type": "cena",
-        "ingredients": "Gyozas de carne o verdura, salsa de soja y vinagre de arroz"
-      }
+        "ingredients": ""
+      },
+      "date": "2026-10-17",
+      "date_str": "17/10",
+      "is_holiday": false,
+      "holiday_name": null
     },
     {
       "day": "Domingo",
       "comida": {
-        "id": "21",
-        "name": "Pisto con huevo",
+        "id": "13",
+        "name": "Garbanzos y calabacín al curry",
         "type": "comida",
-        "ingredients": "Calabacín, pimiento, tomate, cebolla, huevos fritos o escalfados"
+        "ingredients": ""
       },
       "cena": {
-        "id": "1",
-        "name": "Huevo y pimiento",
+        "id": "28",
+        "name": "Ensaladilla",
         "type": "ambas",
-        "ingredients": "Huevos, pimientos, aceite, sal"
-      }
+        "ingredients": ""
+      },
+      "date": "2026-10-18",
+      "date_str": "18/10",
+      "is_holiday": false,
+      "holiday_name": null
     }
   ],
   "vetos": {
     "alvaro_used": 0,
-    "ana_used": 1,
-    "pareja_used": 1,
+    "ana_used": 0,
+    "pareja_used": 0,
     "history": [
       {
         "user": "Ana",
@@ -370,9 +417,10 @@
     }
   ],
   "generation_meta": {
-    "last_auto_gen_week": "",
+    "last_auto_gen_week": "cycle-2026-10-10",
     "manual_regens_this_week": 0,
-    "last_manual_gen_date": ""
+    "last_manual_gen_date": "",
+    "last_auto_gen_date": "2026-10-10 20:58"
   },
   "freezer": {
     "items": {

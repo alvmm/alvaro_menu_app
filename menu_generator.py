@@ -73,10 +73,48 @@ def filter_dishes_by_freezer(dishes_list, freezer_data=None):
 
     return filtered if filtered else dishes_list
 
-def generate_weekly_menu(dishes_list, freezer_data=None):
-    """Genera un menú semanal equilibrado (7 días x Comida/Cena) respetando tipos de plato y congelador."""
+ELABORATE_KEYWORDS = [
+    "puchero", "lentejas", "patatas con carne", "albóndigas", "albondigas",
+    "pollo asado", "pollo al curry", "muslitos guisados", "salmón", "salmon",
+    "garbanzos y calabacín al curry", "pasta boloñesa", "fajitas de pollo",
+    "chistorra y puré de patata", "chistorra", "espinacas con garbanzos"
+]
+
+def is_elaborate_dish(dish: dict) -> bool:
+    """Comprueba si un plato es más elaborado, tradicional o calórico para días festivos o fines de semana."""
+    if not dish:
+        return False
+    name_norm = normalize_text(dish.get("name", ""))
+    ing_norm = normalize_text(dish.get("ingredients", ""))
+    # Las ensaladas suelen ser ligeras aunque lleven ingredientes calóricos
+    if "ensalada" in name_norm:
+        return False
+    for kw in ELABORATE_KEYWORDS:
+        kw_norm = normalize_text(kw)
+        if kw_norm in name_norm or kw_norm in ing_norm:
+            return True
+    return False
+
+def generate_weekly_menu(dishes_list, freezer_data=None, reference_date=None):
+    """Genera un menú semanal equilibrado (7 días x Comida/Cena) respetando tipos de plato, congelador y días festivos."""
     if not dishes_list:
         return []
+
+    from holidays_manager import get_holiday_name
+    from datetime import timedelta
+
+    if reference_date is None:
+        reference_date = datetime.now()
+
+    # Calcular fechas de los 7 días (Lunes a Domingo) para la semana del menú
+    if reference_date.weekday() == 5:
+        monday = (reference_date + timedelta(days=2)).date()
+    elif reference_date.weekday() == 6:
+        monday = (reference_date + timedelta(days=1)).date()
+    else:
+        monday = (reference_date - timedelta(days=reference_date.weekday())).date()
+
+    day_dates = {DAYS_OF_WEEK[i]: monday + timedelta(days=i) for i in range(7)}
 
     if freezer_data:
         dishes_list = filter_dishes_by_freezer(dishes_list, freezer_data)
@@ -100,12 +138,24 @@ def generate_weekly_menu(dishes_list, freezer_data=None):
     used_names = set()
 
     for i, day in enumerate(DAYS_OF_WEEK):
-        # Seleccionar comida
+        d_date = day_dates.get(day)
+        h_name = get_holiday_name(d_date) if d_date else None
+        is_festive = (h_name is not None) or (day in ["Sábado", "Domingo"])
+
+        # Seleccionar comida (en festivos o fines de semana, priorizar platos más elaborados / calóricos)
         comida = None
-        for d in shuffled_comidas:
-            if d["name"] not in used_names:
-                comida = d
-                break
+        if is_festive:
+            for d in shuffled_comidas:
+                if d["name"] not in used_names and is_elaborate_dish(d):
+                    comida = d
+                    break
+
+        if not comida:
+            for d in shuffled_comidas:
+                if d["name"] not in used_names:
+                    comida = d
+                    break
+
         if not comida:
             comida = random.choice(comidas_pool)
         used_names.add(comida["name"])
@@ -122,27 +172,49 @@ def generate_weekly_menu(dishes_list, freezer_data=None):
 
         weekly_menu.append({
             "day": day,
+            "date": d_date.strftime("%Y-%m-%d") if d_date else "",
+            "date_str": d_date.strftime("%d/%m") if d_date else "",
+            "is_holiday": h_name is not None,
+            "holiday_name": h_name,
             "comida": comida,
             "cena": cena
         })
 
     return weekly_menu
 
-def regenerate_menu_manually(dishes_list, generation_meta):
+def get_current_menu_cycle_key(now: datetime = None) -> tuple[str, str]:
+    """
+    Retorna la clave única del ciclo semanal actual (iniciado en sábado) y una descripción legible.
+    El ciclo semanal va de Sábado 00:00 a Viernes 23:59.
+    Ejemplo: 'cycle-2026-10-10', 'Semana 41 (10/10 - 16/10/2026)'
+    """
+    if now is None:
+        now = datetime.now()
+    from datetime import timedelta
+    # Días transcurridos desde el sábado más reciente (Lunes=0, ..., Viernes=4, Sábado=5, Domingo=6)
+    days_since_saturday = (now.weekday() - 5) % 7
+    cycle_start = (now - timedelta(days=days_since_saturday)).date()
+    cycle_end = cycle_start + timedelta(days=6)
+    cycle_key = f"cycle-{cycle_start.isoformat()}"
+    week_num = cycle_start.isocalendar()[1]
+    desc = f"Semana {week_num} ({cycle_start.strftime('%d/%m')} al {cycle_end.strftime('%d/%m/%Y')})"
+    return cycle_key, desc
+
+def regenerate_menu_manually(dishes_list, generation_meta, freezer_data=None):
     """Regenera el menú manualmente si no se ha agotado el límite de 1 vez por semana."""
     manual_used = generation_meta.get("manual_regens_this_week", 0)
     
     if manual_used >= 1:
         return False, None, generation_meta, "Ya has regenerado el menú manualmente esta semana. El límite es 1 regeneración por semana."
 
-    new_menu = generate_weekly_menu(dishes_list)
+    new_menu = generate_weekly_menu(dishes_list, freezer_data=freezer_data)
     new_meta = dict(generation_meta)
     new_meta["manual_regens_this_week"] = manual_used + 1
     new_meta["last_manual_gen_date"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     return True, new_menu, new_meta, "Menú regenerado con éxito."
 
-def find_alternative_dish(dishes_list, meal_type, current_menu, freezer_data=None):
+def find_alternative_dish(dishes_list, meal_type, current_menu, freezer_data=None, is_festive=False):
     """Busca una alternativa válida del mismo tipo (comida/cena/ambas) que no esté en el menú actual respetando el congelador."""
     if freezer_data:
         dishes_list = filter_dishes_by_freezer(dishes_list, freezer_data)
@@ -165,6 +237,15 @@ def find_alternative_dish(dishes_list, meal_type, current_menu, freezer_data=Non
 
     # Intentar buscar uno no usado actualmente
     unused_pool = [d for d in eligible_pool if d.get("name") not in used_dish_names]
+
+    # Si es almuerzo en festivo o fin de semana, priorizar plato más elaborado / calórico
+    if is_festive and target_type == "comida":
+        elaborate_unused = [d for d in unused_pool if is_elaborate_dish(d)]
+        if elaborate_unused:
+            return random.choice(elaborate_unused)
+        elaborate_any = [d for d in eligible_pool if is_elaborate_dish(d)]
+        if elaborate_any:
+            return random.choice(elaborate_any)
 
     if unused_pool:
         return random.choice(unused_pool)

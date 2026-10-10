@@ -14,7 +14,8 @@ DEFAULT_DATA = {
         "smtp_password": "",
         "smtp_use_tls": True,
         "recipients": "alv.mmartin@gmail.com, absaladomoreno@gmail.com",
-        "auto_email_enabled": True
+        "auto_email_enabled": True,
+        "calendar_ics_url": "https://calendar.google.com/calendar/ical/e43d364af3e67d36a6196faa32b2ad337bb75593ff2c5c985f8f19251e3addcf%40group.calendar.google.com/private-02521b59f125507e462eda8a50fe0c18/basic.ics"
     },
     "dishes": [],
     "current_menu": [],

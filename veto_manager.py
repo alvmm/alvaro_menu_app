@@ -90,8 +90,9 @@ def apply_veto(user_name: str, day_name: str, meal_type: str, current_menu: list
     old_dish = day_entry.get(meal_key)
     old_dish_name = old_dish.get("name", "Plato anterior") if old_dish else "Ninguno"
 
-    # Buscar alternativa válida respetando el congelador
-    alternative_dish = find_alternative_dish(dishes_list, meal_key, current_menu, freezer_data=freezer_data)
+    # Buscar alternativa válida respetando el congelador y días festivos
+    is_festive = day_entry.get("is_holiday", False) or (day_name.lower() in ["sábado", "sabado", "domingo"])
+    alternative_dish = find_alternative_dish(dishes_list, meal_key, current_menu, freezer_data=freezer_data, is_festive=is_festive)
     if not alternative_dish:
         return False, current_menu, vetos_state, "No hay platos alternativos disponibles en la base de datos.", None
 

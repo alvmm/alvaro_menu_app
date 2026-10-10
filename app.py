@@ -4,7 +4,10 @@ import pandas as pd
 import logging
 
 from storage_manager import StorageManager
-from menu_generator import generate_weekly_menu, DAYS_OF_WEEK
+from menu_generator import (
+    generate_weekly_menu, regenerate_menu_manually, 
+    get_current_menu_cycle_key, DAYS_OF_WEEK
+)
 from veto_manager import (
     apply_veto, reset_weekly_vetos, get_remaining_vetos, 
     get_veto_window_status, VETO_LIMIT_PER_PERSON
@@ -15,6 +18,9 @@ from coupon_manager import (
 )
 from emailer import send_weekly_menu_email, generate_menu_html
 from csv_loader import fetch_dishes_from_csv, fetch_freezer_from_csv, get_sample_dishes
+from calendar_loader import fetch_calendar_events, get_events_for_menu_week
+from holidays_manager import get_holiday_name
+from calendar_exporter import generate_menu_ics, get_google_calendar_url
 
 # Configuración de página responsive y moderna
 st.set_page_config(
@@ -24,10 +30,91 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+logger = logging.getLogger(__name__)
+
+def check_and_run_weekly_auto_generation(storage_instance):
+    """
+    Comprueba si el ciclo semanal actual (iniciado en sábado) ya tiene su menú generado.
+    Si no coincide con 'last_auto_gen_week', ejecuta la rutina automática semanal:
+    1. Sincroniza platos y congelador desde Google Sheets (si hay conexión y URL configurada).
+    2. Genera un menú semanal equilibrado filtrando según el congelador.
+    3. Reinicia los vetos de la semana (0/2 para Álvaro y Ana).
+    4. Reinicia las regeneraciones manuales (0/1 usadas).
+    5. Actualiza generation_meta con la clave de ciclo y fecha.
+    6. Guarda todo en storage.
+    7. Envía el email si auto_email_enabled está activo y configurado.
+    Retorna: (was_generated: bool, cycle_desc: str)
+    """
+    now = datetime.now()
+    cycle_key, cycle_desc = get_current_menu_cycle_key(now)
+    
+    meta_data = storage_instance.get_generation_meta()
+    last_cycle = meta_data.get("last_auto_gen_week", "")
+    current_menu_data = storage_instance.get_current_menu()
+    
+    # Comprobar si toca generar (ciclo distinto o menú no existente)
+    needs_generation = (last_cycle != cycle_key) or (not current_menu_data)
+    
+    if not needs_generation:
+        return False, cycle_desc
+
+    logger.info(f"Nuevo ciclo detectado ({cycle_key}). Generando menú semanal automáticamente...")
+    settings_data = storage_instance.get_settings()
+    sheet_url = settings_data.get("sheet_url", "")
+    gid_dishes = settings_data.get("sheet_gid_dishes", "83672031")
+    gid_freezer = settings_data.get("sheet_gid_freezer", "797240193")
+    
+    # 1. Intentar actualizar desde Google Sheets si está configurado
+    dishes_list = storage_instance.get_dishes()
+    freezer_info = storage_instance.get_freezer()
+    if sheet_url:
+        try:
+            loaded_dishes, _ = fetch_dishes_from_csv(sheet_url, gid=gid_dishes)
+            if loaded_dishes:
+                dishes_list = loaded_dishes
+                storage_instance.save_dishes(dishes_list)
+            loaded_freezer, _ = fetch_freezer_from_csv(sheet_url, gid=gid_freezer)
+            if loaded_freezer:
+                freezer_info["items"] = loaded_freezer
+                storage_instance.save_freezer(freezer_info)
+        except Exception as e:
+            logger.warning(f"No se pudo sincronizar Google Sheets en auto-generación: {e}")
+
+    if not dishes_list:
+        dishes_list = get_sample_dishes()
+        storage_instance.save_dishes(dishes_list)
+
+    # 2. Generar nuevo menú semanal respetando el congelador
+    new_menu = generate_weekly_menu(dishes_list, freezer_data=freezer_info)
+    storage_instance.save_current_menu(new_menu)
+
+    # 3. Reiniciar vetos semanales a 0 (2 disponibles para Álvaro y 2 para Ana)
+    current_vetos = storage_instance.get_vetos()
+    updated_vetos = reset_weekly_vetos(current_vetos)
+    storage_instance.save_vetos(updated_vetos)
+
+    # 4. Actualizar metadata de generación
+    meta_data["last_auto_gen_week"] = cycle_key
+    meta_data["manual_regens_this_week"] = 0
+    meta_data["last_auto_gen_date"] = now.strftime("%Y-%m-%d %H:%M")
+    storage_instance.save_generation_meta(meta_data)
+
+    # 5. Enviar email automático si está activado y con contraseña configurada
+    if settings_data.get("auto_email_enabled", True) and settings_data.get("smtp_password"):
+        try:
+            send_weekly_menu_email(settings_data, new_menu, is_test=False)
+        except Exception as e:
+            logger.error(f"Error enviando email semanal automático: {e}")
+
+    return True, cycle_desc
+
 # Inicializar StorageManager (siempre sincronizado con el archivo JSON)
 storage = StorageManager()
 
-# Cargar datos iniciales si no existen
+# Comprobar y ejecutar generación automática semanal si ha cambiado el ciclo
+auto_generated_now, cycle_desc = check_and_run_weekly_auto_generation(storage)
+
+# Cargar datos actuales tras la comprobación del ciclo
 dishes = storage.get_dishes()
 if not dishes:
     dishes = get_sample_dishes()
@@ -35,7 +122,7 @@ if not dishes:
 
 current_menu = storage.get_current_menu()
 if not current_menu:
-    current_menu = generate_weekly_menu(dishes)
+    current_menu = generate_weekly_menu(dishes, freezer_data=storage.get_freezer())
     storage.save_current_menu(current_menu)
 
 vetos_state = storage.get_vetos()
@@ -43,6 +130,16 @@ settings = storage.get_settings()
 coupons = storage.get_coupons()
 meta = storage.get_generation_meta()
 freezer_data = storage.get_freezer()
+
+# Cargar eventos del calendario AyA si está configurado
+calendar_ics_url = settings.get("calendar_ics_url", "")
+cal_week_map = {}
+if calendar_ics_url:
+    try:
+        raw_cal_events = fetch_calendar_events(calendar_ics_url)
+        cal_week_map = get_events_for_menu_week(raw_cal_events)
+    except Exception as e:
+        logger.warning(f"Error cargando eventos del calendario AyA: {e}")
 
 # Soporte para secretos seguros en Streamlit Cloud (st.secrets)
 try:
@@ -140,28 +237,35 @@ alvaro_vetos_left = get_remaining_vetos("alvaro", vetos_state)
 ana_vetos_left = get_remaining_vetos("ana", vetos_state)
 expiring_coupons = get_expiring_coupons_alert(coupons)
 
-current_week_num = datetime.now().isocalendar()[1]
-current_date_str = datetime.now().strftime("%d/%m/%Y")
+manual_used = meta.get("manual_regens_this_week", 0)
+can_manual_regen = (manual_used < 1)
+manual_regens_left = max(0, 1 - manual_used)
 
 st.markdown(f"""
 <div class="main-header">
     <h1 style="margin: 0; font-size: 1.8rem;">🍽️ Planificador de Menú Semanal</h1>
-    <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 0.95rem;">Aplicación privada para Álvaro & Ana • <strong>Semana {current_week_num}</strong> del año ({current_date_str})</p>
+    <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 0.95rem;">Aplicación privada para Álvaro & Ana • <strong>{cycle_desc}</strong></p>
 </div>
 """, unsafe_allow_html=True)
 
-# Métricas superiores en columnas
-col1, col2, col3, col4 = st.columns(4)
+# Métricas superiores en 5 columnas
+col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     st.metric("👨 Vetos Álvaro", f"{alvaro_vetos_left} / {VETO_LIMIT_PER_PERSON} disp.")
 with col2:
     st.metric("👩 Vetos Ana", f"{ana_vetos_left} / {VETO_LIMIT_PER_PERSON} disp.")
 with col3:
+    st.metric("🎲 Regen. Manual", f"{manual_regens_left} / 1 disp.", help="Límite estricto: solo 1 regeneración manual por semana. Si se usa, queda bloqueada.")
+with col4:
     total_frozen = len([k for k, v in freezer_data.get("items", {}).items() if v is True or str(v).lower() in ['si', 'sí', 'true', '1']])
     st.metric("🧊 Congelador", f"{total_frozen} disp.")
-with col4:
+with col5:
     pending_coupons = len([c for c in coupons if c.get("status") == "pendiente"])
     st.metric("🎟️ Cupones pendientes", pending_coupons, delta=f"{len(expiring_coupons)} por caducar" if expiring_coupons else None, delta_color="inverse")
+
+# Alerta de notificación automática de sábado si acaba de generarse
+if auto_generated_now:
+    st.toast(f"✨ ¡Menú generado automáticamente para {cycle_desc}!", icon="🍽️")
 
 # Alerta de cupones por caducar si los hay
 if expiring_coupons:
@@ -172,6 +276,28 @@ if expiring_coupons:
 with st.sidebar:
     st.header("⚡ Acciones Rápidas")
     
+    # Botón de Regeneración Manual (Límite estricto de 1 por semana)
+    if can_manual_regen:
+        if st.button("🎲 Regenerar Menú Semanal (1 disp.)", use_container_width=True, help="Regenera el menú completo de esta semana aleatoriamente. Límite estricto: 1 sola vez por semana."):
+            with st.spinner("Generando nueva combinación semanal..."):
+                ok_regen, new_menu, new_meta, msg_regen = regenerate_menu_manually(dishes, meta, freezer_data=freezer_data)
+                if ok_regen:
+                    storage.save_current_menu(new_menu)
+                    storage.save_generation_meta(new_meta)
+                    updated_vetos = reset_weekly_vetos(vetos_state)
+                    storage.save_vetos(updated_vetos)
+                    st.success("¡Menú regenerado con éxito! Se ha consumido la única regeneración manual de esta semana.")
+                    st.rerun()
+                else:
+                    st.error(msg_regen)
+    else:
+        st.button(
+            "🔒 Regeneración Agotada (0/1 disp.)", 
+            disabled=True, 
+            use_container_width=True, 
+            help="Ya se ha utilizado la única regeneración manual permitida para esta semana. El menú completo está fijado. Para cambiar platos individuales, utiliza tus 2 vetos individuales."
+        )
+
     # Botón rápido para enviar email
     if st.button("✉️ Enviar Menú por Email", use_container_width=True, type="primary"):
         with st.spinner("Enviando correo con el menú semanal..."):
@@ -180,6 +306,17 @@ with st.sidebar:
                 st.success("¡Email enviado con éxito a ambos!")
             else:
                 st.error(f"Error al enviar: {msg}")
+
+    # Botón para exportar el menú al calendario
+    menu_ics_data = generate_menu_ics(current_menu, f"Menú Semanal AyA ({cycle_desc})")
+    st.download_button(
+        "📅 Exportar al Calendario (.ics)",
+        data=menu_ics_data,
+        file_name="menu_semanal_AyA.ics",
+        mime="text/calendar",
+        use_container_width=True,
+        help="Descarga el archivo .ics para añadir las 14 comidas y cenas a Google Calendar o al iPhone con 1 clic."
+    )
 
     # Ventana de cambios y vetos (Sábado -> Domingo 16:00)
     is_window_open, window_msg, window_dt = get_veto_window_status()
@@ -235,14 +372,49 @@ tab_menu, tab_vetos, tab_congelador, tab_cupones, tab_lista, tab_recetas, tab_aj
 with tab_menu:
     st.subheader("🗓️ Planificación de la Semana")
 
-    if is_window_open:
-        st.info(f"⏱️ **Plazo de cambios ABIERTO:** Álvaro y Ana podéis aplicar vuestros 2 vetos antes del **domingo a las 16:00** ({window_msg}).")
-    elif override_window:
-        st.warning("🔓 **Modo desbloqueado (Excepción / Pruebas):** Permitido aplicar vetos fuera del plazo habitual.")
-    else:
-        st.error("🔒 **Menú Confirmado (Plazo cerrado):** El plazo para realizar cambios finalizó el **domingo a las 16:00**. El menú semanal está cerrado. Para hacer excepciones, activa 'Permitir cambios fuera de plazo' en el menú lateral.")
+    t_col1, t_col2 = st.columns([3, 1])
+    with t_col1:
+        if is_window_open:
+            st.info(f"⏱️ **Plazo de cambios ABIERTO:** Álvaro y Ana podéis aplicar vuestros 2 vetos antes del **domingo a las 16:00** ({window_msg}).")
+        elif override_window:
+            st.warning("🔓 **Modo desbloqueado (Excepción / Pruebas):** Permitido aplicar vetos fuera del plazo habitual.")
+        else:
+            st.error("🔒 **Menú Confirmado (Plazo cerrado):** El plazo para realizar cambios finalizó el **domingo a las 16:00**. El menú semanal está cerrado. Para hacer excepciones, activa 'Permitir cambios fuera de plazo' en el menú lateral.")
+    with t_col2:
+        if can_manual_regen:
+            if st.button("🎲 Regenerar Menú (1 disp.)", key="btn_regen_tab_menu", help="Regenera todo el menú semanal una única vez si no os convence. Límite: 1 vez por semana."):
+                with st.spinner("Regenerando menú completo..."):
+                    ok_regen, new_menu, new_meta, msg_regen = regenerate_menu_manually(dishes, meta, freezer_data=freezer_data)
+                    if ok_regen:
+                        storage.save_current_menu(new_menu)
+                        storage.save_generation_meta(new_meta)
+                        updated_vetos = reset_weekly_vetos(vetos_state)
+                        storage.save_vetos(updated_vetos)
+                        st.success("¡Menú semanal regenerado con éxito!")
+                        st.rerun()
+                    else:
+                        st.error(msg_regen)
+        else:
+            st.caption("🔒 **Regeneración manual:** Agotada (1/1 usada esta semana). Menú fijado.")
 
-    st.caption("Sustituye cualquier comida o cena de forma individual respetando las normas de la casa.")
+    # Expander para sincronizar y añadir el menú a los calendarios
+    with st.expander("📲 Añadir Menú Completo a Google Calendar / iPhone", expanded=False):
+        st.markdown("""
+        Puedes añadir automáticamente todas las comidas y cenas de esta semana al calendario de Álvaro y Ana:
+        - 🍏 **En iPhone / iPad:** Pulsa el botón de descarga inferior. Tu iPhone te preguntará si quieres añadir los 14 eventos: selecciona el calendario **AyA** y pulsa *"Añadir todos"*.
+        - 🤖 **En Google Calendar (PC o Android):** Descarga el archivo `.ics` y en [Google Calendar](https://calendar.google.com) ve a *Ajustes (⚙️) > Importar y exportar > Importar* y elige el calendario **AyA**.
+        """)
+        st.download_button(
+            "📥 Descargar Menú para Calendario (.ics)",
+            data=menu_ics_data,
+            file_name="menu_semanal_AyA.ics",
+            mime="text/calendar",
+            type="primary",
+            use_container_width=True,
+            key="btn_download_ics_tab1"
+        )
+
+    st.caption("Sustituye cualquier comida o cena de forma individual con vuestros vetos respetando las normas de la casa.")
 
     freezer_items_active = set(
         k for k, v in freezer_data.get("items", {}).items() 
@@ -257,16 +429,47 @@ with tab_menu:
         c_badge_f = '<span class="badge-freezer">🧊 Tupper listo</span>' if comida.get('name') in freezer_items_active else ''
         ce_badge_f = '<span class="badge-freezer">🧊 Tupper listo</span>' if cena.get('name') in freezer_items_active else ''
 
-        st.markdown(f"### 📍 {day_name}")
+        day_info = cal_week_map.get(day_name, {})
+        day_events = day_info.get("events", [])
+        day_date_obj = day_info.get("date")
+        date_suffix = f" • {day_info.get('date_str', '')}" if day_info.get("date_str") else ""
+
+        # Comprobar si es festivo oficial (por ej. 12 de octubre)
+        h_name = get_holiday_name(day_date_obj) if day_date_obj else day_data.get("holiday_name")
+        is_holiday_day = (h_name is not None) or day_data.get("is_holiday", False)
+        is_festive_day = is_holiday_day or (day_name in ["Sábado", "Domingo"])
+
+        st.markdown(f"### 📍 {day_name}{date_suffix}")
+
+        if is_holiday_day:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%); border: 1px solid #F59E0B; border-left: 5px solid #D97706; padding: 8px 14px; border-radius: 8px; margin-bottom: 12px; color: #92400E; font-size: 0.9rem; font-weight: 600;">
+                🎉 <strong>¡DÍA FESTIVO!</strong> {h_name or 'Festivo oficial'} • <em>Comida elaborada / especial recomendada</em>
+            </div>
+            """, unsafe_allow_html=True)
+
+        if day_events:
+            for ev in day_events:
+                ev_time = f" ({ev['start'].strftime('%H:%M')})" if not ev.get('is_all_day') and ev.get('start') else ""
+                st.markdown(f"""
+                <div style="background-color: #EFF6FF; border: 1px solid #BFDBFE; border-left: 4px solid #3B82F6; padding: 6px 12px; border-radius: 8px; margin-bottom: 10px; font-size: 0.88rem; color: #1E40AF;">
+                    🗓️ <strong>Evento AyA:</strong> {ev['summary']}{ev_time}
+                </div>
+                """, unsafe_allow_html=True)
+
         c_comida, c_cena = st.columns(2)
 
         # Tarjeta Comida
         with c_comida:
+            festive_badge = '<span style="background-color: #FEF3C7; color: #B45309; font-weight: 600; font-size: 0.75rem; padding: 2px 8px; border-radius: 9999px; margin-left: 6px;">🍲 Elaborada</span>' if is_festive_day else ''
+            c_cal_url = get_google_calendar_url(f"☀️ Comida: {comida.get('name')}", day_data.get('date', ''), 14, details=f"Ingredientes: {comida.get('ingredients', '')}")
+            cal_link_c = f'<div style="text-align: right; margin-top: 4px;"><a href="{c_cal_url}" target="_blank" style="font-size: 0.8rem; text-decoration: none; color: #2563EB;">📅 Añadir a Google Cal</a></div>' if c_cal_url else ''
             st.markdown(f"""
             <div class="dish-card">
-                <span class="badge-comida">☀️ ALMUERZO</span>{c_badge_f}
+                <span class="badge-comida">☀️ ALMUERZO</span>{festive_badge}{c_badge_f}
                 <div class="dish-title">{comida.get('name', 'No asignado')}</div>
                 <div class="dish-ing"><em>Ingredientes:</em> {comida.get('ingredients', 'Sin ingredientes')}</div>
+                {cal_link_c}
             </div>
             """, unsafe_allow_html=True)
 
@@ -294,11 +497,14 @@ with tab_menu:
 
         # Tarjeta Cena
         with c_cena:
+            ce_cal_url = get_google_calendar_url(f"🌙 Cena: {cena.get('name')}", day_data.get('date', ''), 21, details=f"Ingredientes: {cena.get('ingredients', '')}")
+            cal_link_ce = f'<div style="text-align: right; margin-top: 4px;"><a href="{ce_cal_url}" target="_blank" style="font-size: 0.8rem; text-decoration: none; color: #2563EB;">📅 Añadir a Google Cal</a></div>' if ce_cal_url else ''
             st.markdown(f"""
             <div class="dish-card">
                 <span class="badge-cena">🌙 CENA</span>{ce_badge_f}
                 <div class="dish-title">{cena.get('name', 'No asignado')}</div>
                 <div class="dish-ing"><em>Ingredientes:</em> {cena.get('ingredients', 'Sin ingredientes')}</div>
+                {cal_link_ce}
             </div>
             """, unsafe_allow_html=True)
 
@@ -686,11 +892,20 @@ with tab_ajustes:
             smtp_tls = st.checkbox("Usar STARTTLS (Recomendado puerto 587)", value=settings.get("smtp_use_tls", True))
             st.caption("ℹ️ *Gmail requiere una contraseña de 16 caracteres creada en [Google Contraseñas de Aplicación](https://myaccount.google.com/apppasswords).*")
 
+        st.markdown("#### 3. Calendario Compartido AyA (Google Calendar)")
+        st.caption("Dirección secreta iCal (.ics) para sincronizar en tiempo real los eventos y planes de Álvaro y Ana:")
+        calendar_ics_input = st.text_input(
+            "Enlace secreto iCal (.ics) del calendario:",
+            value=settings.get("calendar_ics_url", ""),
+            help="Enlace privado .ics obtenido desde Google Calendar para sincronizar eventos y planes."
+        )
+
         if st.form_submit_button("💾 Guardar Configuración", type="primary"):
             new_settings = {
                 "sheet_url": sheet_url_input.strip(),
                 "sheet_gid_dishes": sheet_gid_dishes.strip(),
                 "sheet_gid_freezer": sheet_gid_freezer.strip(),
+                "calendar_ics_url": calendar_ics_input.strip(),
                 "smtp_host": smtp_host.strip(),
                 "smtp_port": int(smtp_port),
                 "smtp_user": smtp_user.strip(),
