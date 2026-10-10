@@ -398,21 +398,33 @@ with tab_menu:
             st.caption("🔒 **Regeneración manual:** Agotada (1/1 usada esta semana). Menú fijado.")
 
     # Expander para sincronizar y añadir el menú a los calendarios
-    with st.expander("📲 Añadir Menú Completo a Google Calendar / iPhone", expanded=False):
-        st.markdown("""
-        Puedes añadir automáticamente todas las comidas y cenas de esta semana al calendario de Álvaro y Ana:
-        - 🍏 **En iPhone / iPad:** Pulsa el botón de descarga inferior. Tu iPhone te preguntará si quieres añadir los 14 eventos: selecciona el calendario **AyA** y pulsa *"Añadir todos"*.
-        - 🤖 **En Google Calendar (PC o Android):** Descarga el archivo `.ics` y en [Google Calendar](https://calendar.google.com) ve a *Ajustes (⚙️) > Importar y exportar > Importar* y elige el calendario **AyA**.
+    with st.expander("📲 Sincronización Permanente con Google Calendar / iPhone", expanded=False):
+        sub_url = "https://cdn.jsdelivr.net/gh/alvmm/alvaro_menu_app@main/menu_semanal_AyA.ics"
+        gcal_sub_url = f"https://calendar.google.com/calendar/r?cid=webcal://cdn.jsdelivr.net/gh/alvmm/alvaro_menu_app@main/menu_semanal_AyA.ics"
+        
+        st.markdown(f"""
+        ### 🔗 Enlace Permanente y Automático
+        Para que el menú aparezca siempre actualizado sin tener que importar nada cada semana:
+        
+        1. **En Google Calendar (1 Clic):**  
+           👉 [**Abrir y Suscribirse en Google Calendar**]({gcal_sub_url}) *(Pulsa 'Añadir calendario' cuando te pregunte)*
+        2. **O añade manualmente la URL en Google Calendar:**  
+           *(Otros calendarios > '+' > Desde una URL)*
+           ```text
+           {sub_url}
+           ```
+        3. 🍏 **En iPhone / iPad:**  
+           Abre [este enlace webcal](webcal://cdn.jsdelivr.net/gh/alvmm/alvaro_menu_app@main/menu_semanal_AyA.ics) y pulsa *"Suscribirse"*.
         """)
         st.download_button(
-            "📥 Descargar Menú para Calendario (.ics)",
+            "📥 Descargar Archivo .ics (Alternativa local)",
             data=menu_ics_data,
             file_name="menu_semanal_AyA.ics",
             mime="text/calendar",
-            type="primary",
             use_container_width=True,
             key="btn_download_ics_tab1"
         )
+
 
     st.caption("Sustituye cualquier comida o cena de forma individual con vuestros vetos respetando las normas de la casa.")
 

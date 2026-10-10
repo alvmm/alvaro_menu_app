@@ -186,11 +186,27 @@ class TestAlvaroMenuApp(unittest.TestCase):
         self.assertFalse(is_elaborate_dish(ensalada))
 
     def test_calendar_exporter(self):
+        import icalendar
+        import os
+        from calendar_exporter import save_menu_ics_file
         menu = generate_weekly_menu(SAMPLE_DISHES)
         ics_content = generate_menu_ics(menu)
         self.assertIn("BEGIN:VCALENDAR", ics_content)
         self.assertIn("END:VCALENDAR", ics_content)
         self.assertEqual(ics_content.count("BEGIN:VEVENT"), 14)
+
+        test_file = "test_menu_output.ics"
+        save_menu_ics_file(menu, filepath=test_file)
+        self.assertTrue(os.path.exists(test_file))
+        with open(test_file, "rb") as f:
+            raw = f.read()
+        self.assertNotIn(b"\r\r\n", raw)
+        self.assertIn(b"\r\n", raw)
+        cal = icalendar.Calendar.from_ical(raw)
+        events = [c for c in cal.walk() if c.name == "VEVENT"]
+        self.assertEqual(len(events), 14)
+        if os.path.exists(test_file):
+            os.remove(test_file)
 
         url = get_google_calendar_url("☀️ Comida: Lentejas", "2026-10-12", 14)
         self.assertIn("calendar.google.com", url)

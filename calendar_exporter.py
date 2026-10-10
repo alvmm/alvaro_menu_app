@@ -19,6 +19,8 @@ def generate_menu_ics(menu_data: list, calendar_name: str = "Menú Semanal AyA")
         "METHOD:PUBLISH",
         f"X-WR-CALNAME:{calendar_name}",
         "X-WR-TIMEZONE:Europe/Madrid",
+        "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
+        "X-PUBLISHED-TTL:PT1H",
         "BEGIN:VTIMEZONE",
         "TZID:Europe/Madrid",
         "X-LIC-LOCATION:Europe/Madrid",
@@ -65,6 +67,7 @@ def generate_menu_ics(menu_data: list, calendar_name: str = "Menú Semanal AyA")
             f"SUMMARY:☀️ Comida: {c_name}",
             f"DESCRIPTION:{c_desc}",
             "STATUS:CONFIRMED",
+            "SEQUENCE:0",
             "TRANSP:TRANSPARENT",
             "END:VEVENT"
         ])
@@ -85,12 +88,24 @@ def generate_menu_ics(menu_data: list, calendar_name: str = "Menú Semanal AyA")
             f"SUMMARY:🌙 Cena: {ce_name}",
             f"DESCRIPTION:{ce_desc}",
             "STATUS:CONFIRMED",
+            "SEQUENCE:0",
             "TRANSP:TRANSPARENT",
             "END:VEVENT"
         ])
 
     ics_lines.append("END:VCALENDAR")
     return "\r\n".join(ics_lines) + "\r\n"
+
+def save_menu_ics_file(menu_data: list, filepath: str = "menu_semanal_AyA.ics", calendar_name: str = "Menú Semanal AyA") -> str:
+    """
+    Guarda el archivo de calendario .ics en disco con codificación UTF-8
+    y saltos de línea CRLF estrictos RFC 5545 (\r\n) sin duplicación en Windows.
+    """
+    ics_text = generate_menu_ics(menu_data, calendar_name=calendar_name)
+    with open(filepath, "wb") as f:
+        f.write(ics_text.encode("utf-8"))
+    return filepath
+
 
 def get_google_calendar_url(title: str, date_str: str, start_hour: int, duration_hours: int = 1, details: str = "") -> str:
     """

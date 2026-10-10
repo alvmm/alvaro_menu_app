@@ -107,6 +107,11 @@ class StorageManager:
     def save_current_menu(self, menu):
         self.data["current_menu"] = menu
         self.save_data()
+        try:
+            from calendar_exporter import save_menu_ics_file
+            save_menu_ics_file(menu)
+        except Exception as e:
+            logger.warning(f"No se pudo actualizar el archivo ICS del calendario: {e}")
 
     def get_vetos(self):
         return self.data.get("vetos", DEFAULT_DATA["vetos"])
