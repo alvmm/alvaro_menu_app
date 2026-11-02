@@ -8,12 +8,12 @@ on:
       - '.github/workflows/build-mobile.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: mobile_app
 
     steps:
       - name: Checkout repository
@@ -30,22 +30,35 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install dependencies
+        working-directory: mobile_app
         run: npm install --legacy-peer-deps
 
       - name: Generate native Android project (Expo Prebuild)
+        working-directory: mobile_app
         run: npx expo prebuild --platform android --no-install
 
       - name: Build Release APK with Gradle
         working-directory: mobile_app/android
-        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk ../../Menu-AyA.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Menu-AyA-Android-APK
-          path: mobile_app/android/app/build/outputs/apk/release/*.apk
+          path: Menu-AyA.apk
           retention-days: 30
+
+      - name: Publish APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.0.0-mobile
+          name: "📱 Menú AyA v2.0 — App Nativa Android (.apk)"
+          body: "Instalador nativo de Android (`.apk`) conectado 24/7 al servidor en la nube (`https://alvaro-menu-app.onrender.com`). No requiere tener el ordenador encendido."
+          files: Menu-AyA.apk
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
