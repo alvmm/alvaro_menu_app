@@ -6,3 +6,7 @@ __pycache__/
 *.log
 .DS_Store
 legacy_kivy/
+mobile_app/node_modules/
+mobile_app/.expo/
+mobile_app/android/
+mobile_app/ios/

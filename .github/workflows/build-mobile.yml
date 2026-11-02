@@ -1,0 +1,51 @@
+name: Build Native Android APK (Menú AyA)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'mobile_app/**'
+      - '.github/workflows/build-mobile.yml'
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile_app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Generate native Android project (Expo Prebuild)
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build Release APK with Gradle
+        working-directory: mobile_app/android
+        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Menu-AyA-Android-APK
+          path: mobile_app/android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
