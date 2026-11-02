@@ -1,21 +1,23 @@
+import copy
 import json
 import os
 import logging
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_DATA = {
     "settings": {
-        "sheet_url": "https://docs.google.com/spreadsheets/d/163wHVPAMQbmkS1PqNZvLc-jDLzb2F9iiYF0FhM3jaU0/edit?gid=83672031#gid=83672031",
+        "sheet_url": "",
+        "sheet_gid_dishes": "83672031",
+        "sheet_gid_freezer": "797240193",
         "smtp_host": "smtp.gmail.com",
         "smtp_port": 587,
-        "smtp_user": "alv.mmartin@gmail.com",
+        "smtp_user": "",
         "smtp_password": "",
         "smtp_use_tls": True,
-        "recipients": "alv.mmartin@gmail.com, absaladomoreno@gmail.com",
+        "recipients": "",
         "auto_email_enabled": True,
-        "calendar_ics_url": "https://calendar.google.com/calendar/ical/e43d364af3e67d36a6196faa32b2ad337bb75593ff2c5c985f8f19251e3addcf%40group.calendar.google.com/private-02521b59f125507e462eda8a50fe0c18/basic.ics"
+        "calendar_ics_url": ""
     },
     "dishes": [],
     "current_menu": [],
@@ -55,7 +57,8 @@ DEFAULT_DATA = {
         "freezer_only_dishes": [
             "Lentejas", "Puchero", "Albóndigas", "Croquetas", "Garbanzos y calabacín al curry", "Muslitos guisados"
         ]
-    }
+    },
+    "shopping_checked": []
 }
 
 class StorageManager:
@@ -68,8 +71,9 @@ class StorageManager:
     def load_data(self):
         if not os.path.exists(self.filepath):
             logger.info("Archivo de datos no encontrado. Creando valores por defecto.")
-            self.save_data(DEFAULT_DATA)
-            return DEFAULT_DATA
+            default_copy = copy.deepcopy(DEFAULT_DATA)
+            self.save_data(default_copy)
+            return default_copy
         
         try:
             with open(self.filepath, "r", encoding="utf-8") as f:
@@ -77,11 +81,19 @@ class StorageManager:
                 # Asegurar claves faltantes por compatibilidad
                 for key, val in DEFAULT_DATA.items():
                     if key not in data:
-                        data[key] = val
+                        data[key] = copy.deepcopy(val)
+                if "settings" in data and isinstance(data["settings"], dict):
+                    for s_key, s_val in DEFAULT_DATA["settings"].items():
+                        if s_key not in data["settings"]:
+                            data["settings"][s_key] = s_val
+                # Normalizar usuario legacy 'Pareja' -> 'Ana' en cupones
+                for coupon in data.get("coupons", []):
+                    if isinstance(coupon, dict) and str(coupon.get("user", "")).strip().lower() == "pareja":
+                        coupon["user"] = "Ana"
                 return data
         except Exception as e:
             logger.error(f"Error cargando archivo de datos JSON: {e}")
-            return DEFAULT_DATA
+            return copy.deepcopy(DEFAULT_DATA)
 
     def save_data(self, data=None):
         if data is not None:
@@ -95,7 +107,42 @@ class StorageManager:
             return False
 
     def get_settings(self):
-        return self.data.get("settings", DEFAULT_DATA["settings"])
+        """Devuelve la configuración guardada en el archivo JSON (sin inyectar secretos de entorno)."""
+        return dict(self.data.get("settings", DEFAULT_DATA["settings"]))
+
+    def get_effective_settings(self, st_secrets=None):
+        """
+        Devuelve una copia de la configuración combinando los valores guardados en JSON
+        con los secretos de Streamlit (st.secrets) sin persistir los secretos en disco.
+        """
+        effective = self.get_settings()
+        if st_secrets is not None:
+            try:
+                if "smtp" in st_secrets:
+                    sec = st_secrets["smtp"]
+                    if sec.get("user"):
+                        effective["smtp_user"] = str(sec["user"])
+                    if sec.get("password"):
+                        effective["smtp_password"] = str(sec["password"])
+                    if sec.get("recipients"):
+                        effective["recipients"] = str(sec["recipients"])
+                    if sec.get("host"):
+                        effective["smtp_host"] = str(sec["host"])
+                    if sec.get("port"):
+                        effective["smtp_port"] = int(sec["port"])
+                if "integrations" in st_secrets:
+                    integ = st_secrets["integrations"]
+                    if not effective.get("sheet_url") and integ.get("sheet_url"):
+                        effective["sheet_url"] = str(integ["sheet_url"])
+                    if not effective.get("sheet_gid_dishes") and integ.get("sheet_gid_dishes"):
+                        effective["sheet_gid_dishes"] = str(integ["sheet_gid_dishes"])
+                    if not effective.get("sheet_gid_freezer") and integ.get("sheet_gid_freezer"):
+                        effective["sheet_gid_freezer"] = str(integ["sheet_gid_freezer"])
+                    if not effective.get("calendar_ics_url") and integ.get("calendar_ics_url"):
+                        effective["calendar_ics_url"] = str(integ["calendar_ics_url"])
+            except Exception as e:
+                logger.debug(f"No se pudieron leer secretos adicionales: {e}")
+        return effective
 
     def update_settings(self, new_settings):
         self.data["settings"].update(new_settings)
@@ -107,11 +154,13 @@ class StorageManager:
     def save_current_menu(self, menu):
         self.data["current_menu"] = menu
         self.save_data()
-        try:
-            from calendar_exporter import save_menu_ics_file
-            save_menu_ics_file(menu)
-        except Exception as e:
-            logger.warning(f"No se pudo actualizar el archivo ICS del calendario: {e}")
+        if "test" not in os.path.basename(self.filepath).lower():
+            try:
+                from calendar_exporter import save_menu_ics_file
+                save_menu_ics_file(menu)
+            except Exception as e:
+                logger.warning(f"No se pudo actualizar el archivo ICS del calendario: {e}")
+
 
     def get_vetos(self):
         return self.data.get("vetos", DEFAULT_DATA["vetos"])
@@ -147,3 +196,11 @@ class StorageManager:
     def save_freezer(self, freezer_data):
         self.data["freezer"] = freezer_data
         self.save_data()
+
+    def get_shopping_checked(self) -> list[str]:
+        return list(self.data.get("shopping_checked", []))
+
+    def save_shopping_checked(self, checked_list: list[str]):
+        self.data["shopping_checked"] = list(checked_list)
+        self.save_data()
+

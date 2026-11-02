@@ -1,6 +1,8 @@
 import random
 import logging
-from datetime import datetime
+import unicodedata
+from datetime import datetime, timedelta
+from holidays_manager import get_holiday_name, now_madrid
 
 logger = logging.getLogger(__name__)
 
@@ -8,14 +10,45 @@ DAYS_OF_WEEK = [
     "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"
 ]
 
-import unicodedata
-
 def normalize_text(text: str) -> str:
     """Elimina tildes y convierte a minúsculas para comparaciones flexibles de nombres de platos."""
     if not text:
         return ""
     n = unicodedata.normalize("NFD", str(text).lower().strip())
     return "".join(c for c in n if unicodedata.category(c) != "Mn")
+
+def is_freezer_status_available(status) -> bool:
+    """Evalúa de forma homogénea si el estado de un ítem del congelador indica disponibilidad."""
+    if isinstance(status, bool):
+        return status
+    if isinstance(status, int):
+        return status > 0
+    if isinstance(status, dict):
+        return status.get("portions", 1) > 0
+    if isinstance(status, str):
+        return status.strip().lower() in ["si", "sí", "yes", "true", "1", "ok"]
+    return False
+
+def dish_matches_freezer_item(dish: dict, freezer_item_name: str) -> bool:
+    """Comprueba si un plato o sus ingredientes corresponden a un alimento del congelador."""
+    if not dish or not freezer_item_name:
+        return False
+    f_norm = normalize_text(freezer_item_name)
+    if not f_norm:
+        return False
+    d_name_norm = normalize_text(dish.get("name", ""))
+    d_ing_norm = normalize_text(dish.get("ingredients", ""))
+    return (f_norm in d_name_norm) or (f_norm in d_ing_norm)
+
+def is_dish_in_freezer(dish: dict, freezer_data: dict) -> bool:
+    """Indica si un plato cuenta con existencias activas vinculadas en el congelador."""
+    if not dish or not freezer_data:
+        return False
+    items_in_freezer = freezer_data.get("items", {})
+    for f_item, status in items_in_freezer.items():
+        if is_freezer_status_available(status) and dish_matches_freezer_item(dish, f_item):
+            return True
+    return False
 
 def is_dish_enabled_by_freezer(dish: dict, freezer_data: dict) -> tuple[bool, str]:
     """
@@ -31,28 +64,9 @@ def is_dish_enabled_by_freezer(dish: dict, freezer_data: dict) -> tuple[bool, st
     if not items_in_freezer:
         return True, "Habilitado"
 
-    d_name_norm = normalize_text(dish.get("name", ""))
-    d_ing_norm = normalize_text(dish.get("ingredients", ""))
-
     for f_item, status in items_in_freezer.items():
-        f_norm = normalize_text(f_item)
-        if not f_norm:
-            continue
-
-        # Comprobar si el estado es True / Sí o False / No
-        is_in_stock = False
-        if isinstance(status, bool):
-            is_in_stock = status
-        elif isinstance(status, int):
-            is_in_stock = status > 0
-        elif isinstance(status, dict):
-            is_in_stock = status.get("portions", 1) > 0
-        elif isinstance(status, str):
-            is_in_stock = status.lower() in ["si", "sí", "true", "1", "ok"]
-
-        # Si el plato depende de este alimento del congelador y NO hay stock -> deshabilitar
-        if (f_norm in d_name_norm) or (f_norm in d_ing_norm):
-            if not is_in_stock:
+        if dish_matches_freezer_item(dish, f_item):
+            if not is_freezer_status_available(status):
                 return False, f"Falta '{f_item}' en el congelador"
 
     return True, "Habilitado"
@@ -100,11 +114,8 @@ def generate_weekly_menu(dishes_list, freezer_data=None, reference_date=None):
     if not dishes_list:
         return []
 
-    from holidays_manager import get_holiday_name
-    from datetime import timedelta
-
     if reference_date is None:
-        reference_date = datetime.now()
+        reference_date = now_madrid()
 
     # Calcular fechas de los 7 días (Lunes a Domingo) para la semana del menú
     if reference_date.weekday() == 5:
@@ -184,20 +195,19 @@ def generate_weekly_menu(dishes_list, freezer_data=None, reference_date=None):
 
 def get_current_menu_cycle_key(now: datetime = None) -> tuple[str, str]:
     """
-    Retorna la clave única del ciclo semanal actual (iniciado en sábado) y una descripción legible.
-    El ciclo semanal va de Sábado 00:00 a Viernes 23:59.
-    Ejemplo: 'cycle-2026-10-10', 'Semana 41 (10/10 - 16/10/2026)'
+    Retorna la clave única del ciclo semanal actual (iniciado en sábado) y una descripción legible
+    que muestra el rango de Lunes a Domingo correspondiente al menú planificado.
     """
     if now is None:
-        now = datetime.now()
-    from datetime import timedelta
+        now = now_madrid()
     # Días transcurridos desde el sábado más reciente (Lunes=0, ..., Viernes=4, Sábado=5, Domingo=6)
     days_since_saturday = (now.weekday() - 5) % 7
     cycle_start = (now - timedelta(days=days_since_saturday)).date()
-    cycle_end = cycle_start + timedelta(days=6)
     cycle_key = f"cycle-{cycle_start.isoformat()}"
-    week_num = cycle_start.isocalendar()[1]
-    desc = f"Semana {week_num} ({cycle_start.strftime('%d/%m')} al {cycle_end.strftime('%d/%m/%Y')})"
+    menu_monday = cycle_start + timedelta(days=2)
+    menu_sunday = cycle_start + timedelta(days=8)
+    week_num = menu_monday.isocalendar()[1]
+    desc = f"Semana {week_num} (Lunes {menu_monday.strftime('%d/%m')} al Domingo {menu_sunday.strftime('%d/%m/%Y')})"
     return cycle_key, desc
 
 def regenerate_menu_manually(dishes_list, generation_meta, freezer_data=None):
@@ -210,16 +220,17 @@ def regenerate_menu_manually(dishes_list, generation_meta, freezer_data=None):
     new_menu = generate_weekly_menu(dishes_list, freezer_data=freezer_data)
     new_meta = dict(generation_meta)
     new_meta["manual_regens_this_week"] = manual_used + 1
-    new_meta["last_manual_gen_date"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    new_meta["last_manual_gen_date"] = now_madrid().strftime("%Y-%m-%d %H:%M")
 
     return True, new_menu, new_meta, "Menú regenerado con éxito."
 
-def find_alternative_dish(dishes_list, meal_type, current_menu, freezer_data=None, is_festive=False):
+def find_alternative_dish(dishes_list, meal_type, current_menu, freezer_data=None, is_festive=False, excluded_dish_name=None):
     """Busca una alternativa válida del mismo tipo (comida/cena/ambas) que no esté en el menú actual respetando el congelador."""
     if freezer_data:
         dishes_list = filter_dishes_by_freezer(dishes_list, freezer_data)
 
     target_type = "comida" if meal_type.lower() == "comida" else "cena"
+    excluded_norm = normalize_text(excluded_dish_name) if excluded_dish_name else ""
     
     # Obtener nombres de platos usados actualmente en el menú
     used_dish_names = set()
@@ -228,11 +239,14 @@ def find_alternative_dish(dishes_list, meal_type, current_menu, freezer_data=Non
             used_dish_names.add(day["comida"].get("name"))
         if day.get("cena"):
             used_dish_names.add(day["cena"].get("name"))
+    if excluded_dish_name:
+        used_dish_names.add(excluded_dish_name)
 
-    # Filtrar pool elegible
+    # Filtrar pool elegible excluyendo siempre el plato vetado
     eligible_pool = [
         d for d in dishes_list 
         if d.get("type") in [target_type, "ambas"]
+        and (not excluded_norm or normalize_text(d.get("name", "")) != excluded_norm)
     ]
 
     # Intentar buscar uno no usado actualmente
@@ -252,5 +266,8 @@ def find_alternative_dish(dishes_list, meal_type, current_menu, freezer_data=Non
     elif eligible_pool:
         return random.choice(eligible_pool)
     else:
-        # Fallback si no se encontró ninguno específico
+        # Fallback si no se encontró ninguno específico (evitando el plato vetado si es posible)
+        non_excluded = [d for d in dishes_list if not excluded_norm or normalize_text(d.get("name", "")) != excluded_norm]
+        if non_excluded:
+            return random.choice(non_excluded)
         return random.choice(dishes_list) if dishes_list else None

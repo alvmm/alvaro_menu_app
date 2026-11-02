@@ -2,10 +2,17 @@ import csv
 import io
 import re
 import logging
+import unicodedata
 import urllib.request
 import urllib.error
 
 logger = logging.getLogger(__name__)
+
+def _norm(text: str) -> str:
+    if not text:
+        return ""
+    n = unicodedata.normalize("NFD", str(text).lower().strip())
+    return "".join(c for c in n if unicodedata.category(c) != "Mn")
 
 SAMPLE_DISHES = [
     {"id": "1", "name": "Huevo y pimiento", "type": "ambas", "ingredients": "Huevos, pimientos, aceite, sal"},
@@ -43,8 +50,40 @@ SAMPLE_DISHES = [
     {"id": "33", "name": "Albóndigas", "type": "comida", "ingredients": "Albóndigas de carne en salsa de tomate o salsa española, patatas"},
     {"id": "34", "name": "Ensalada atún, huevo y patata", "type": "ambas", "ingredients": "Patata cocida, atún, huevos cocidos, cebolla, aceite, vinagre"},
     {"id": "35", "name": "Espinacas con garbanzos", "type": "comida", "ingredients": "Garbanzos cocidos, espinacas, ajo, pimentón, comino"},
-    {"id": "36", "name": "Gulas con gambas", "type": "cena", "ingredients": "Gulas, gambas peladas, ajo laminado, guindilla, aceite de oliva"}
+    {"id": "36", "name": "Gulas con gambas", "type": "cena", "ingredients": "Gulas, gambas peladas, ajo laminado, guindilla, aceite de oliva"},
+    {"id": "37", "name": "Sopa", "type": "cena", "ingredients": "Caldo de pollo o puchero, fideos finos, huevo cocido o jamón"},
+    {"id": "38", "name": "Salmorejo", "type": "ambas", "ingredients": "Tomate maduro, pan, aceite de oliva virgen extra, ajo, huevo duro, jamón picado"},
+    {"id": "39", "name": "Crema calabaza", "type": "cena", "ingredients": "Calabaza, puerro o cebolla, patata, aceite de oliva, quesito"}
 ]
+
+def get_default_ingredients_for_dish(dish_name: str, existing_dishes: list[dict] = None) -> str:
+    """
+    Recupera los ingredientes conocidos para un plato (primero buscando en existing_dishes
+    y después en SAMPLE_DISHES) si en Google Sheets la columna de ingredientes está vacía.
+    """
+    target = _norm(dish_name)
+    if not target:
+        return ""
+    if existing_dishes:
+        for d in existing_dishes:
+            if _norm(d.get("name", "")) == target and d.get("ingredients", "").strip():
+                return d["ingredients"].strip()
+    for d in SAMPLE_DISHES:
+        if _norm(d.get("name", "")) == target and d.get("ingredients", "").strip():
+            return d["ingredients"].strip()
+    return ""
+
+def enrich_dishes_ingredients(dishes_list: list[dict], existing_dishes: list[dict] = None) -> list[dict]:
+    """Rellena los ingredientes vacíos de una lista de platos usando el catálogo base."""
+    if not dishes_list:
+        return []
+    for d in dishes_list:
+        if isinstance(d, dict) and not str(d.get("ingredients", "")).strip():
+            fallback = get_default_ingredients_for_dish(d.get("name", ""), existing_dishes)
+            if fallback:
+                d["ingredients"] = fallback
+    return dishes_list
+
 
 def normalize_sheet_url(url_or_id: str, default_gid: str = None) -> str:
     """Transforma cualquier enlace o ID de Google Sheet a la URL pública de exportación CSV."""
@@ -87,7 +126,7 @@ def normalize_meal_type(raw_type: str) -> str:
         return "ambas"
     return "ambas"
 
-def fetch_dishes_from_csv(sheet_url_or_id: str, gid: str = "83672031"):
+def fetch_dishes_from_csv(sheet_url_or_id: str, gid: str = "83672031", existing_dishes: list[dict] = None):
     """Descarga y parsea el CSV desde Google Sheets con la estructura requerida."""
     export_url = normalize_sheet_url(sheet_url_or_id, default_gid=gid)
     if not export_url:
@@ -120,7 +159,13 @@ def fetch_dishes_from_csv(sheet_url_or_id: str, gid: str = "83672031"):
                 ""
             ).strip()
             raw_type = normalized_row.get("tipo", "ambas")
-            ingredients = normalized_row.get("ingredientes", "")
+            ingredients = (
+                normalized_row.get("ingredientes") or
+                normalized_row.get("ingredients") or
+                ""
+            ).strip()
+            if not ingredients and name:
+                ingredients = get_default_ingredients_for_dish(name, existing_dishes)
             
             if name:
                 dishes.append({

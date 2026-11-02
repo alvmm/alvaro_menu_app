@@ -1,7 +1,16 @@
-from datetime import date, timedelta
+from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 import logging
 
 logger = logging.getLogger(__name__)
+
+def now_madrid() -> datetime:
+    """Devuelve la fecha y hora actual en huso horario Europe/Madrid (sin tzinfo para comparaciones homogéneas)."""
+    try:
+        return datetime.now(ZoneInfo("Europe/Madrid")).replace(tzinfo=None)
+    except Exception:
+        return datetime.now()
+
 
 def get_easter_sunday(year: int) -> date:
     """Calcula el Domingo de Resurrección para cualquier año usando el algoritmo de Meeus/Jones/Butcher."""

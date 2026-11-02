@@ -1,3 +1,4 @@
+import html as html_lib
 import streamlit as st
 from datetime import datetime, date, timedelta
 import pandas as pd
@@ -6,7 +7,9 @@ import logging
 from storage_manager import StorageManager
 from menu_generator import (
     generate_weekly_menu, regenerate_menu_manually, 
-    get_current_menu_cycle_key, DAYS_OF_WEEK
+    get_current_menu_cycle_key, DAYS_OF_WEEK,
+    normalize_text, is_freezer_status_available,
+    dish_matches_freezer_item, is_dish_in_freezer
 )
 from veto_manager import (
     apply_veto, reset_weekly_vetos, get_remaining_vetos, 
@@ -17,9 +20,12 @@ from coupon_manager import (
     get_coupons_by_user, get_expiring_coupons_alert, check_expiration_warning
 )
 from emailer import send_weekly_menu_email, generate_menu_html
-from csv_loader import fetch_dishes_from_csv, fetch_freezer_from_csv, get_sample_dishes
+from csv_loader import (
+    fetch_dishes_from_csv, fetch_freezer_from_csv,
+    get_sample_dishes, enrich_dishes_ingredients
+)
 from calendar_loader import fetch_calendar_events, get_events_for_menu_week
-from holidays_manager import get_holiday_name
+from holidays_manager import get_holiday_name, now_madrid
 from calendar_exporter import generate_menu_ics, get_google_calendar_url
 
 # Configuración de página responsive y moderna
@@ -32,20 +38,25 @@ st.set_page_config(
 
 logger = logging.getLogger(__name__)
 
-def check_and_run_weekly_auto_generation(storage_instance):
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_fetch_calendar_events(ics_url: str) -> list[dict]:
+    """Descarga y cachea durante 15 minutos los eventos del calendario iCal."""
+    return fetch_calendar_events(ics_url)
+
+def check_and_run_weekly_auto_generation(storage_instance, effective_settings: dict):
     """
     Comprueba si el ciclo semanal actual (iniciado en sábado) ya tiene su menú generado.
     Si no coincide con 'last_auto_gen_week', ejecuta la rutina automática semanal:
     1. Sincroniza platos y congelador desde Google Sheets (si hay conexión y URL configurada).
     2. Genera un menú semanal equilibrado filtrando según el congelador.
-    3. Reinicia los vetos de la semana (0/2 para Álvaro y Ana).
+    3. Reinicia los vetos de la semana (0/2 para Álvaro y Ana) y la lista de la compra.
     4. Reinicia las regeneraciones manuales (0/1 usadas).
     5. Actualiza generation_meta con la clave de ciclo y fecha.
     6. Guarda todo en storage.
     7. Envía el email si auto_email_enabled está activo y configurado.
     Retorna: (was_generated: bool, cycle_desc: str)
     """
-    now = datetime.now()
+    now = now_madrid()
     cycle_key, cycle_desc = get_current_menu_cycle_key(now)
     
     meta_data = storage_instance.get_generation_meta()
@@ -59,17 +70,16 @@ def check_and_run_weekly_auto_generation(storage_instance):
         return False, cycle_desc
 
     logger.info(f"Nuevo ciclo detectado ({cycle_key}). Generando menú semanal automáticamente...")
-    settings_data = storage_instance.get_settings()
-    sheet_url = settings_data.get("sheet_url", "")
-    gid_dishes = settings_data.get("sheet_gid_dishes", "83672031")
-    gid_freezer = settings_data.get("sheet_gid_freezer", "797240193")
+    sheet_url = effective_settings.get("sheet_url", "")
+    gid_dishes = effective_settings.get("sheet_gid_dishes", "83672031")
+    gid_freezer = effective_settings.get("sheet_gid_freezer", "797240193")
     
     # 1. Intentar actualizar desde Google Sheets si está configurado
     dishes_list = storage_instance.get_dishes()
     freezer_info = storage_instance.get_freezer()
     if sheet_url:
         try:
-            loaded_dishes, _ = fetch_dishes_from_csv(sheet_url, gid=gid_dishes)
+            loaded_dishes, _ = fetch_dishes_from_csv(sheet_url, gid=gid_dishes, existing_dishes=dishes_list)
             if loaded_dishes:
                 dishes_list = loaded_dishes
                 storage_instance.save_dishes(dishes_list)
@@ -88,10 +98,11 @@ def check_and_run_weekly_auto_generation(storage_instance):
     new_menu = generate_weekly_menu(dishes_list, freezer_data=freezer_info)
     storage_instance.save_current_menu(new_menu)
 
-    # 3. Reiniciar vetos semanales a 0 (2 disponibles para Álvaro y 2 para Ana)
+    # 3. Reiniciar vetos semanales a 0 y limpiar lista de la compra marcada
     current_vetos = storage_instance.get_vetos()
     updated_vetos = reset_weekly_vetos(current_vetos)
     storage_instance.save_vetos(updated_vetos)
+    storage_instance.save_shopping_checked([])
 
     # 4. Actualizar metadata de generación
     meta_data["last_auto_gen_week"] = cycle_key
@@ -100,9 +111,9 @@ def check_and_run_weekly_auto_generation(storage_instance):
     storage_instance.save_generation_meta(meta_data)
 
     # 5. Enviar email automático si está activado y con contraseña configurada
-    if settings_data.get("auto_email_enabled", True) and settings_data.get("smtp_password"):
+    if effective_settings.get("auto_email_enabled", True) and effective_settings.get("smtp_password"):
         try:
-            send_weekly_menu_email(settings_data, new_menu, is_test=False)
+            send_weekly_menu_email(effective_settings, new_menu, is_test=False)
         except Exception as e:
             logger.error(f"Error enviando email semanal automático: {e}")
 
@@ -111,14 +122,21 @@ def check_and_run_weekly_auto_generation(storage_instance):
 # Inicializar StorageManager (siempre sincronizado con el archivo JSON)
 storage = StorageManager()
 
+# Obtener configuración efectiva combinando JSON local + st.secrets (sin volcar secretos en el JSON)
+st_secrets_obj = st.secrets if hasattr(st, "secrets") else None
+saved_settings = storage.get_settings()
+settings = storage.get_effective_settings(st_secrets_obj)
+
 # Comprobar y ejecutar generación automática semanal si ha cambiado el ciclo
-auto_generated_now, cycle_desc = check_and_run_weekly_auto_generation(storage)
+auto_generated_now, cycle_desc = check_and_run_weekly_auto_generation(storage, settings)
 
 # Cargar datos actuales tras la comprobación del ciclo
 dishes = storage.get_dishes()
 if not dishes:
     dishes = get_sample_dishes()
     storage.save_dishes(dishes)
+else:
+    dishes = enrich_dishes_ingredients(dishes)
 
 current_menu = storage.get_current_menu()
 if not current_menu:
@@ -126,32 +144,19 @@ if not current_menu:
     storage.save_current_menu(current_menu)
 
 vetos_state = storage.get_vetos()
-settings = storage.get_settings()
 coupons = storage.get_coupons()
 meta = storage.get_generation_meta()
 freezer_data = storage.get_freezer()
 
-# Cargar eventos del calendario AyA si está configurado
+# Cargar eventos del calendario AyA si está configurado (con caché de 15 min)
 calendar_ics_url = settings.get("calendar_ics_url", "")
 cal_week_map = {}
 if calendar_ics_url:
     try:
-        raw_cal_events = fetch_calendar_events(calendar_ics_url)
+        raw_cal_events = cached_fetch_calendar_events(calendar_ics_url)
         cal_week_map = get_events_for_menu_week(raw_cal_events)
     except Exception as e:
         logger.warning(f"Error cargando eventos del calendario AyA: {e}")
-
-# Soporte para secretos seguros en Streamlit Cloud (st.secrets)
-try:
-    if hasattr(st, "secrets") and "smtp" in st.secrets:
-        sec = st.secrets["smtp"]
-        if "user" in sec: settings["smtp_user"] = str(sec["user"])
-        if "password" in sec: settings["smtp_password"] = str(sec["password"])
-        if "recipients" in sec: settings["recipients"] = str(sec["recipients"])
-        if "host" in sec: settings["smtp_host"] = str(sec["host"])
-        if "port" in sec: settings["smtp_port"] = int(sec["port"])
-except Exception:
-    pass
 
 # --- CSS Personalizado para un diseño limpio y moderno ---
 st.markdown("""
@@ -244,7 +249,7 @@ manual_regens_left = max(0, 1 - manual_used)
 st.markdown(f"""
 <div class="main-header">
     <h1 style="margin: 0; font-size: 1.8rem;">🍽️ Planificador de Menú Semanal</h1>
-    <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 0.95rem;">Aplicación privada para Álvaro & Ana • <strong>{cycle_desc}</strong></p>
+    <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 0.95rem;">Aplicación privada para Álvaro & Ana • <strong>{html_lib.escape(cycle_desc)}</strong></p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -257,7 +262,7 @@ with col2:
 with col3:
     st.metric("🎲 Regen. Manual", f"{manual_regens_left} / 1 disp.", help="Límite estricto: solo 1 regeneración manual por semana. Si se usa, queda bloqueada.")
 with col4:
-    total_frozen = len([k for k, v in freezer_data.get("items", {}).items() if v is True or str(v).lower() in ['si', 'sí', 'true', '1']])
+    total_frozen = len([k for k, v in freezer_data.get("items", {}).items() if is_freezer_status_available(v)])
     st.metric("🧊 Congelador", f"{total_frozen} disp.")
 with col5:
     pending_coupons = len([c for c in coupons if c.get("status") == "pendiente"])
@@ -286,6 +291,7 @@ with st.sidebar:
                     storage.save_generation_meta(new_meta)
                     updated_vetos = reset_weekly_vetos(vetos_state)
                     storage.save_vetos(updated_vetos)
+                    storage.save_shopping_checked([])
                     st.success("¡Menú regenerado con éxito! Se ha consumido la única regeneración manual de esta semana.")
                     st.rerun()
                 else:
@@ -333,13 +339,13 @@ with st.sidebar:
         help="Actívalo si necesitas aplicar un veto o cambio excepcional una vez pasado el domingo a las 16:00 (o en modo pruebas)."
     )
 
-    # Botón rápido para sincronizar con Google Sheets (Platos y Congelador en el mismo archivo)
+    # Botón rápido para sincronizar con Google Sheets y Calendario
     if st.button("🔄 Sincronizar Google Sheets", use_container_width=True):
         sheet_url = settings.get("sheet_url", "")
         gid_dishes = settings.get("sheet_gid_dishes", "83672031")
         gid_freezer = settings.get("sheet_gid_freezer", "797240193")
-        with st.spinner("Descargando recetas y estado del congelador..."):
-            loaded_dishes, msg = fetch_dishes_from_csv(sheet_url, gid=gid_dishes)
+        with st.spinner("Descargando recetas, congelador y calendario..."):
+            loaded_dishes, msg = fetch_dishes_from_csv(sheet_url, gid=gid_dishes, existing_dishes=dishes)
             loaded_freezer, f_msg = fetch_freezer_from_csv(sheet_url, gid=gid_freezer)
             if loaded_dishes:
                 storage.save_dishes(loaded_dishes)
@@ -347,6 +353,7 @@ with st.sidebar:
                 f_data = storage.get_freezer()
                 f_data["items"] = loaded_freezer
                 storage.save_freezer(f_data)
+            cached_fetch_calendar_events.clear()
             st.success(f"¡Sincronizado! {msg} • {f_msg}")
             st.rerun()
 
@@ -390,6 +397,7 @@ with tab_menu:
                         storage.save_generation_meta(new_meta)
                         updated_vetos = reset_weekly_vetos(vetos_state)
                         storage.save_vetos(updated_vetos)
+                        storage.save_shopping_checked([])
                         st.success("¡Menú semanal regenerado con éxito!")
                         st.rerun()
                     else:
@@ -428,23 +436,19 @@ with tab_menu:
 
     st.caption("Sustituye cualquier comida o cena de forma individual con vuestros vetos respetando las normas de la casa.")
 
-    freezer_items_active = set(
-        k for k, v in freezer_data.get("items", {}).items() 
-        if (isinstance(v, int) and v > 0) or (isinstance(v, dict) and v.get("portions", 1) > 0)
-    )
-
     for day_data in current_menu:
         day_name = day_data.get("day", "")
         comida = day_data.get("comida", {})
         cena = day_data.get("cena", {})
 
-        c_badge_f = '<span class="badge-freezer">🧊 Tupper listo</span>' if comida.get('name') in freezer_items_active else ''
-        ce_badge_f = '<span class="badge-freezer">🧊 Tupper listo</span>' if cena.get('name') in freezer_items_active else ''
+        c_badge_f = '<span class="badge-freezer">🧊 En congelador</span>' if is_dish_in_freezer(comida, freezer_data) else ''
+        ce_badge_f = '<span class="badge-freezer">🧊 En congelador</span>' if is_dish_in_freezer(cena, freezer_data) else ''
 
         day_info = cal_week_map.get(day_name, {})
         day_events = day_info.get("events", [])
         day_date_obj = day_info.get("date")
-        date_suffix = f" • {day_info.get('date_str', '')}" if day_info.get("date_str") else ""
+        date_str_val = day_info.get("date_str") or day_data.get("date_str", "")
+        date_suffix = f" • {date_str_val}" if date_str_val else ""
 
         # Comprobar si es festivo oficial (por ej. 12 de octubre)
         h_name = get_holiday_name(day_date_obj) if day_date_obj else day_data.get("holiday_name")
@@ -454,18 +458,21 @@ with tab_menu:
         st.markdown(f"### 📍 {day_name}{date_suffix}")
 
         if is_holiday_day:
+            safe_h_name = html_lib.escape(str(h_name or 'Festivo oficial'))
             st.markdown(f"""
             <div style="background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%); border: 1px solid #F59E0B; border-left: 5px solid #D97706; padding: 8px 14px; border-radius: 8px; margin-bottom: 12px; color: #92400E; font-size: 0.9rem; font-weight: 600;">
-                🎉 <strong>¡DÍA FESTIVO!</strong> {h_name or 'Festivo oficial'} • <em>Comida elaborada / especial recomendada</em>
+                🎉 <strong>¡DÍA FESTIVO!</strong> {safe_h_name} • <em>Comida elaborada / especial recomendada</em>
             </div>
             """, unsafe_allow_html=True)
 
         if day_events:
             for ev in day_events:
                 ev_time = f" ({ev['start'].strftime('%H:%M')})" if not ev.get('is_all_day') and ev.get('start') else ""
+                safe_summary = html_lib.escape(str(ev.get('summary', '')))
+                safe_time = html_lib.escape(ev_time)
                 st.markdown(f"""
                 <div style="background-color: #EFF6FF; border: 1px solid #BFDBFE; border-left: 4px solid #3B82F6; padding: 6px 12px; border-radius: 8px; margin-bottom: 10px; font-size: 0.88rem; color: #1E40AF;">
-                    🗓️ <strong>Evento AyA:</strong> {ev['summary']}{ev_time}
+                    🗓️ <strong>Evento AyA:</strong> {safe_summary}{safe_time}
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -474,13 +481,15 @@ with tab_menu:
         # Tarjeta Comida
         with c_comida:
             festive_badge = '<span style="background-color: #FEF3C7; color: #B45309; font-weight: 600; font-size: 0.75rem; padding: 2px 8px; border-radius: 9999px; margin-left: 6px;">🍲 Elaborada</span>' if is_festive_day else ''
-            c_cal_url = get_google_calendar_url(f"☀️ Comida: {comida.get('name')}", day_data.get('date', ''), 14, details=f"Ingredientes: {comida.get('ingredients', '')}")
-            cal_link_c = f'<div style="text-align: right; margin-top: 4px;"><a href="{c_cal_url}" target="_blank" style="font-size: 0.8rem; text-decoration: none; color: #2563EB;">📅 Añadir a Google Cal</a></div>' if c_cal_url else ''
+            c_name_raw = comida.get('name', 'No asignado')
+            c_ing_raw = comida.get('ingredients') or 'Sin ingredientes'
+            c_cal_url = get_google_calendar_url(f"☀️ Comida: {c_name_raw}", day_data.get('date', ''), 14, details=f"Ingredientes: {c_ing_raw}")
+            cal_link_c = f'<div style="text-align: right; margin-top: 4px;"><a href="{html_lib.escape(c_cal_url)}" target="_blank" style="font-size: 0.8rem; text-decoration: none; color: #2563EB;">📅 Añadir a Google Cal</a></div>' if c_cal_url else ''
             st.markdown(f"""
             <div class="dish-card">
                 <span class="badge-comida">☀️ ALMUERZO</span>{festive_badge}{c_badge_f}
-                <div class="dish-title">{comida.get('name', 'No asignado')}</div>
-                <div class="dish-ing"><em>Ingredientes:</em> {comida.get('ingredients', 'Sin ingredientes')}</div>
+                <div class="dish-title">{html_lib.escape(str(c_name_raw))}</div>
+                <div class="dish-ing"><em>Ingredientes:</em> {html_lib.escape(str(c_ing_raw))}</div>
                 {cal_link_c}
             </div>
             """, unsafe_allow_html=True)
@@ -509,13 +518,15 @@ with tab_menu:
 
         # Tarjeta Cena
         with c_cena:
-            ce_cal_url = get_google_calendar_url(f"🌙 Cena: {cena.get('name')}", day_data.get('date', ''), 21, details=f"Ingredientes: {cena.get('ingredients', '')}")
-            cal_link_ce = f'<div style="text-align: right; margin-top: 4px;"><a href="{ce_cal_url}" target="_blank" style="font-size: 0.8rem; text-decoration: none; color: #2563EB;">📅 Añadir a Google Cal</a></div>' if ce_cal_url else ''
+            ce_name_raw = cena.get('name', 'No asignado')
+            ce_ing_raw = cena.get('ingredients') or 'Sin ingredientes'
+            ce_cal_url = get_google_calendar_url(f"🌙 Cena: {ce_name_raw}", day_data.get('date', ''), 21, details=f"Ingredientes: {ce_ing_raw}")
+            cal_link_ce = f'<div style="text-align: right; margin-top: 4px;"><a href="{html_lib.escape(ce_cal_url)}" target="_blank" style="font-size: 0.8rem; text-decoration: none; color: #2563EB;">📅 Añadir a Google Cal</a></div>' if ce_cal_url else ''
             st.markdown(f"""
             <div class="dish-card">
                 <span class="badge-cena">🌙 CENA</span>{ce_badge_f}
-                <div class="dish-title">{cena.get('name', 'No asignado')}</div>
-                <div class="dish-ing"><em>Ingredientes:</em> {cena.get('ingredients', 'Sin ingredientes')}</div>
+                <div class="dish-title">{html_lib.escape(str(ce_name_raw))}</div>
+                <div class="dish-ing"><em>Ingredientes:</em> {html_lib.escape(str(ce_ing_raw))}</div>
                 {cal_link_ce}
             </div>
             """, unsafe_allow_html=True)
@@ -587,7 +598,6 @@ with tab_vetos:
 
 
 # ==============================================================================
-# ==============================================================================
 # TAB 3: CONGELADOR & ALIMENTOS (GOOGLE SHEETS)
 # ==============================================================================
 with tab_congelador:
@@ -617,7 +627,7 @@ with tab_congelador:
     st.divider()
 
     # Métricas
-    enabled_count = len([k for k, v in items_in_freezer.items() if (isinstance(v, bool) and v) or (isinstance(v, str) and v.lower() in ['si', 'sí', 'true', '1'])])
+    enabled_count = len([k for k, v in items_in_freezer.items() if is_freezer_status_available(v)])
     disabled_count = len(items_in_freezer) - enabled_count
 
     m_col1, m_col2 = st.columns(2)
@@ -632,20 +642,10 @@ with tab_congelador:
     st.caption("Puedes consultar el estado o cambiarlo con 1 clic aquí mismo (se guardará también localmente):")
 
     for item_name, status in items_in_freezer.items():
-        is_available = status if isinstance(status, bool) else (str(status).lower() in ["si", "sí", "true", "1"])
+        is_available = is_freezer_status_available(status)
         
-        # Encontrar platos de la lista afectados
-        from menu_generator import normalize_text
-        norm_it = normalize_text(item_name)
-        synonyms = [norm_it]
-        if "pollo" in norm_it: synonyms.append("pollo")
-        matched = []
-        for d in dishes:
-            d_name_norm = normalize_text(d["name"])
-            d_ing_norm = normalize_text(d["ingredients"])
-            if any(s in d_name_norm or s in d_ing_norm for s in synonyms):
-                matched.append(d["name"])
-
+        # Encontrar platos de la lista afectados usando la misma función del generador de menús
+        matched = [d["name"] for d in dishes if dish_matches_freezer_item(d, item_name)]
         matched_str = ", ".join(matched) if matched else "Sin platos directos vinculados"
 
         with st.container():
@@ -696,16 +696,22 @@ with tab_cupones:
             code, exp_msg, exp_color = check_expiration_warning(exp_date)
             status = c.get("status", "pendiente")
 
+            safe_owner = html_lib.escape(str(user_owner))
+            safe_exp_msg = html_lib.escape(str(exp_msg))
+            safe_title = html_lib.escape(str(c.get('title', '')))
+            safe_rest = html_lib.escape(str(c.get('restaurant') or 'No especificado'))
+            safe_notes = html_lib.escape(str(c.get('notes') or 'Sin notas'))
+
             with st.container():
                 st.markdown(f"""
                 <div style="background: {'#FAFAFA' if status == 'usado' else '#FFFFFF'}; border: 1px solid {'#CBD5E1' if status == 'usado' else '#E2E8F0'}; border-radius: 12px; padding: 16px; margin-bottom: 12px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span class="{badge_class}">👤 {user_owner}</span>
-                        <span style="color: {exp_color}; font-weight: 700; font-size: 0.85rem;">⏳ {exp_msg}</span>
+                        <span class="{badge_class}">👤 {safe_owner}</span>
+                        <span style="color: {exp_color}; font-weight: 700; font-size: 0.85rem;">⏳ {safe_exp_msg}</span>
                     </div>
-                    <h4 style="margin: 8px 0 4px 0; color: {'#94A3B8' if status == 'usado' else '#1E293B'}; text-decoration: {'line-through' if status == 'usado' else 'none'};">{c.get('title')}</h4>
-                    <p style="margin: 0 0 6px 0; font-weight: 600; color: #475569;">📍 Restaurante: {c.get('restaurant', 'No especificado')}</p>
-                    <p style="margin: 0; font-size: 0.85rem; color: #64748B;">📝 <em>{c.get('notes', 'Sin notas')}</em></p>
+                    <h4 style="margin: 8px 0 4px 0; color: {'#94A3B8' if status == 'usado' else '#1E293B'}; text-decoration: {'line-through' if status == 'usado' else 'none'};">{safe_title}</h4>
+                    <p style="margin: 0 0 6px 0; font-weight: 600; color: #475569;">📍 Restaurante: {safe_rest}</p>
+                    <p style="margin: 0; font-size: 0.85rem; color: #64748B;">📝 <em>{safe_notes}</em></p>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -728,6 +734,7 @@ with tab_cupones:
 
     # Formulario para añadir cupón
     st.subheader("➕ Añadir Nueva Invitación o Cupón")
+    today_madrid = now_madrid().date()
     with st.form("form_add_coupon", clear_on_submit=True):
         a_col1, a_col2 = st.columns(2)
         with a_col1:
@@ -735,7 +742,7 @@ with tab_cupones:
             new_rest = st.text_input("Restaurante o tipo de comida", placeholder="Ej: Goiko Grill / Comida Mexicana")
             new_user = st.selectbox("¿A quién pertenece / Quién invita?", ["Álvaro", "Ana"])
         with a_col2:
-            new_date = st.date_input("Fecha de caducidad", min_value=datetime.now().date(), value=datetime.now().date() + timedelta(days=30))
+            new_date = st.date_input("Fecha de caducidad", min_value=today_madrid, value=today_madrid + timedelta(days=30))
             new_notes = st.text_area("Condiciones o notas", placeholder="Ej: Válido solo de lunes a jueves en local.")
 
         if st.form_submit_button("Guardar Cupón", type="primary"):
@@ -756,13 +763,14 @@ with tab_cupones:
 
 
 # ==============================================================================
-# TAB 4: LISTA DE LA COMPRA CONSOLIDADA
+# TAB 5: LISTA DE LA COMPRA CONSOLIDADA
 # ==============================================================================
 with tab_lista:
     st.subheader("🛒 Lista de la Compra Consolidada")
-    st.caption("Ingredientes necesarios para cocinar todos los almuerzos y cenas de esta semana:")
+    st.caption("Ingredientes necesarios para cocinar todos los almuerzos y cenas de esta semana (sincronizada y guardada automáticamente):")
 
     all_ingredients = []
+    seen_norms = set()
     dish_ingredient_map = []
 
     for day in current_menu:
@@ -770,26 +778,55 @@ with tab_lista:
             m_data = day.get(meal, {})
             name = m_data.get("name", "")
             raw_ing = m_data.get("ingredients", "")
+            if not raw_ing and name:
+                # Fallback si el menú guardado en sesión previa no tenía ingredientes
+                for d_cat in dishes:
+                    if normalize_text(d_cat.get("name", "")) == normalize_text(name):
+                        raw_ing = d_cat.get("ingredients", "")
+                        break
             if raw_ing:
                 dish_ingredient_map.append({"Día": day.get("day"), "Plato": f"{name} ({meal.capitalize()})", "Ingredientes": raw_ing})
                 for item in raw_ing.split(","):
                     item_clean = item.strip().capitalize()
-                    if item_clean and item_clean not in all_ingredients:
+                    item_norm = normalize_text(item_clean)
+                    if item_clean and item_norm not in seen_norms:
+                        seen_norms.add(item_norm)
                         all_ingredients.append(item_clean)
 
     all_ingredients.sort()
 
     if all_ingredients:
-        # Checkbox interactivo para ir tachando en el supermercado
-        st.write(f"**Total ingredientes distintos:** {len(all_ingredients)}")
+        checked_saved = set(storage.get_shopping_checked())
+        valid_checked = [ing for ing in all_ingredients if ing in checked_saved]
+
+        sh_col1, sh_col2 = st.columns([3, 1])
+        with sh_col1:
+            st.write(f"**Total ingredientes distintos:** {len(all_ingredients)} • **En el carrito / comprados:** {len(valid_checked)} / {len(all_ingredients)}")
+        with sh_col2:
+            if valid_checked and st.button("🧹 Desmarcar todos", use_container_width=True):
+                storage.save_shopping_checked([])
+                st.rerun()
+
         cols = st.columns(2)
+        new_checked = []
+        changed = False
         for i, ing in enumerate(all_ingredients):
+            is_chk_default = ing in checked_saved
             with cols[i % 2]:
-                st.checkbox(ing, key=f"shop_item_{i}")
+                val = st.checkbox(ing, value=is_chk_default, key=f"shop_item_{normalize_text(ing)}")
+                if val:
+                    new_checked.append(ing)
+                if val != is_chk_default:
+                    changed = True
+
+        if changed:
+            storage.save_shopping_checked(new_checked)
+            st.rerun()
 
         st.divider()
-        st.markdown("#### 📋 Copiar lista en texto plano para WhatsApp:")
-        formatted_list = "🛒 *LISTA DE LA COMPRA SEMANAL:*\n" + "\n".join([f"• {ing}" for ing in all_ingredients])
+        pending_ingredients = [ing for ing in all_ingredients if ing not in new_checked]
+        st.markdown("#### 📋 Copiar lista pendiente en texto plano para WhatsApp:")
+        formatted_list = "🛒 *LISTA DE LA COMPRA SEMANAL:*\n" + "\n".join([f"• {ing}" for ing in (pending_ingredients or all_ingredients)])
         st.code(formatted_list, language="text")
 
         with st.expander("🔍 Ver desglose plato por plato"):
@@ -799,7 +836,7 @@ with tab_lista:
 
 
 # ==============================================================================
-# TAB 5: CATÁLOGO DE RECETAS
+# TAB 6: CATÁLOGO DE RECETAS
 # ==============================================================================
 with tab_recetas:
     st.subheader("🥗 Base de Datos de Recetas")
@@ -834,82 +871,132 @@ with tab_recetas:
 
     st.divider()
 
-    # Añadir receta manualmente
-    with st.expander("➕ Añadir Plato Manualmente"):
-        with st.form("form_add_dish", clear_on_submit=True):
-            nd_name = st.text_input("Nombre del plato *")
-            nd_type = st.selectbox("Tipo de plato", ["comida", "cena", "ambas"])
-            nd_ing = st.text_input("Ingredientes (separados por comas)", placeholder="Ej: Arroz, tomate, pollo, cebolla")
-            if st.form_submit_button("Guardar Receta en Base de Datos"):
-                if nd_name.strip():
-                    new_dish = {
-                        "id": str(len(dishes) + 1),
-                        "name": nd_name.strip(),
-                        "type": nd_type,
-                        "ingredients": nd_ing.strip()
-                    }
-                    dishes.append(new_dish)
-                    storage.save_dishes(dishes)
-                    st.success(f"¡Receta '{nd_name}' añadida con éxito!")
-                    st.rerun()
-                else:
-                    st.error("Debes escribir un nombre para el plato.")
+    rec_col1, rec_col2 = st.columns(2)
+
+    with rec_col1:
+        # Añadir receta manualmente
+        with st.expander("➕ Añadir Plato Manualmente"):
+            with st.form("form_add_dish", clear_on_submit=True):
+                nd_name = st.text_input("Nombre del plato *")
+                nd_type = st.selectbox("Tipo de plato", ["comida", "cena", "ambas"])
+                nd_ing = st.text_input("Ingredientes (separados por comas)", placeholder="Ej: Arroz, tomate, pollo, cebolla")
+                if st.form_submit_button("Guardar Receta en Base de Datos", type="primary"):
+                    if nd_name.strip():
+                        next_id = max([int(d.get("id", 0)) for d in dishes if str(d.get("id", "")).isdigit()] + [len(dishes)]) + 1
+                        new_dish = {
+                            "id": str(next_id),
+                            "name": nd_name.strip(),
+                            "type": nd_type,
+                            "ingredients": nd_ing.strip()
+                        }
+                        dishes.append(new_dish)
+                        storage.save_dishes(dishes)
+                        st.success(f"¡Receta '{nd_name}' añadida con éxito!")
+                        st.rerun()
+                    else:
+                        st.error("Debes escribir un nombre para el plato.")
+
+    with rec_col2:
+        # Editar o eliminar plato existente
+        with st.expander("✏️ Editar o Eliminar Plato Existente"):
+            if dishes:
+                dish_names_list = [d.get("name", "") for d in dishes]
+                selected_dish_name = st.selectbox("Selecciona el plato:", dish_names_list, key="sel_edit_dish")
+                selected_dish_obj = next((d for d in dishes if d.get("name") == selected_dish_name), None)
+                if selected_dish_obj:
+                    with st.form("form_edit_dish"):
+                        ed_name = st.text_input("Nombre del plato *", value=selected_dish_obj.get("name", ""))
+                        type_options = ["comida", "cena", "ambas"]
+                        curr_type = selected_dish_obj.get("type", "ambas").lower()
+                        type_idx = type_options.index(curr_type) if curr_type in type_options else 2
+                        ed_type = st.selectbox("Tipo de plato", type_options, index=type_idx)
+                        ed_ing = st.text_input("Ingredientes (separados por comas)", value=selected_dish_obj.get("ingredients", ""))
+                        b_col1, b_col2 = st.columns(2)
+                        with b_col1:
+                            save_edit = st.form_submit_button("💾 Guardar Cambios", type="primary")
+                        with b_col2:
+                            delete_dish_btn = st.form_submit_button("🗑️ Eliminar Plato")
+
+                        if save_edit:
+                            if ed_name.strip():
+                                selected_dish_obj["name"] = ed_name.strip()
+                                selected_dish_obj["type"] = ed_type
+                                selected_dish_obj["ingredients"] = ed_ing.strip()
+                                storage.save_dishes(dishes)
+                                st.success(f"¡Plato '{ed_name}' actualizado!")
+                                st.rerun()
+                            else:
+                                st.error("El nombre no puede estar vacío.")
+                        elif delete_dish_btn:
+                            updated_dishes_list = [d for d in dishes if d.get("name") != selected_dish_name]
+                            storage.save_dishes(updated_dishes_list)
+                            st.success(f"Plato '{selected_dish_name}' eliminado.")
+                            st.rerun()
 
 
 # ==============================================================================
-# TAB 6: AJUSTES & CORREO
+# TAB 7: AJUSTES & CORREO
 # ==============================================================================
 with tab_ajustes:
     st.subheader("⚙️ Configuración del Sistema")
+    st.caption("🔒 Las credenciales definidas en `.streamlit/secrets.toml` se aplican automáticamente en memoria sin guardarse en texto plano dentro de `menu_app_data.json`.")
 
     with st.form("settings_form"):
         st.markdown("#### 1. Google Sheets (Mismo archivo para Platos y Congelador)")
         st.caption("Ambas hojas pertenecen al mismo documento de Google Sheets en pestañas distintas.")
         sheet_url_input = st.text_input(
             "Enlace del archivo de Google Sheets:",
-            value=settings.get("sheet_url", ""),
-            help="Enlace completo del documento compartido."
+            value=saved_settings.get("sheet_url", ""),
+            placeholder="Configurado vía secrets.toml" if settings.get("sheet_url") and not saved_settings.get("sheet_url") else "https://docs.google.com/spreadsheets/d/...",
+            help="Enlace completo del documento compartido. Si lo dejas vacío, se usará el definido en secrets.toml."
         )
         gid_col1, gid_col2 = st.columns(2)
         with gid_col1:
             sheet_gid_dishes = st.text_input(
                 "GID Pestaña Platos:",
-                value=str(settings.get("sheet_gid_dishes", "83672031")),
+                value=str(saved_settings.get("sheet_gid_dishes", "83672031")),
                 help="El identificador de pestaña (gid=...) de la hoja de platos."
             )
         with gid_col2:
             sheet_gid_freezer = st.text_input(
                 "GID Pestaña Congelador:",
-                value=str(settings.get("sheet_gid_freezer", "797240193")),
+                value=str(saved_settings.get("sheet_gid_freezer", "797240193")),
                 help="El identificador de pestaña (gid=...) de la hoja de congelador."
             )
 
         st.markdown("#### 2. Servidor de Correo (SMTP)")
         smtp_col1, smtp_col2 = st.columns(2)
         with smtp_col1:
-            smtp_host = st.text_input("Servidor SMTP:", value=settings.get("smtp_host", "smtp.gmail.com"))
-            smtp_port = st.number_input("Puerto SMTP:", value=int(settings.get("smtp_port", 587)), step=1)
-            smtp_user = st.text_input("Usuario / Email emisor:", value=settings.get("smtp_user", ""))
+            smtp_host = st.text_input("Servidor SMTP:", value=saved_settings.get("smtp_host", "smtp.gmail.com"))
+            smtp_port = st.number_input("Puerto SMTP:", value=int(saved_settings.get("smtp_port", 587)), step=1)
+            smtp_user = st.text_input(
+                "Usuario / Email emisor:",
+                value=saved_settings.get("smtp_user", ""),
+                placeholder="Configurado vía secrets.toml" if settings.get("smtp_user") and not saved_settings.get("smtp_user") else "tu_correo@gmail.com"
+            )
         with smtp_col2:
             smtp_pass = st.text_input(
                 "Contraseña de Aplicación (Gmail):", 
-                value=settings.get("smtp_password", ""), 
+                value=saved_settings.get("smtp_password", ""), 
                 type="password",
-                help="Genera una contraseña de 16 letras en: https://myaccount.google.com/apppasswords (no uses tu contraseña habitual de Gmail)"
+                placeholder="Configurada vía secrets.toml" if settings.get("smtp_password") and not saved_settings.get("smtp_password") else "",
+                help="Genera una contraseña de 16 letras en: https://myaccount.google.com/apppasswords (se recomienda guardarla en .streamlit/secrets.toml)"
             )
             recipients = st.text_input(
                 "Destinatarios (separados por comas):", 
-                value=settings.get("recipients", "alv.mmartin@gmail.com, absaladomoreno@gmail.com")
+                value=saved_settings.get("recipients", ""),
+                placeholder="Configurados vía secrets.toml" if settings.get("recipients") and not saved_settings.get("recipients") else "correo1@gmail.com, correo2@gmail.com"
             )
-            smtp_tls = st.checkbox("Usar STARTTLS (Recomendado puerto 587)", value=settings.get("smtp_use_tls", True))
+            smtp_tls = st.checkbox("Usar STARTTLS (Recomendado puerto 587)", value=saved_settings.get("smtp_use_tls", True))
             st.caption("ℹ️ *Gmail requiere una contraseña de 16 caracteres creada en [Google Contraseñas de Aplicación](https://myaccount.google.com/apppasswords).*")
 
         st.markdown("#### 3. Calendario Compartido AyA (Google Calendar)")
         st.caption("Dirección secreta iCal (.ics) para sincronizar en tiempo real los eventos y planes de Álvaro y Ana:")
         calendar_ics_input = st.text_input(
             "Enlace secreto iCal (.ics) del calendario:",
-            value=settings.get("calendar_ics_url", ""),
-            help="Enlace privado .ics obtenido desde Google Calendar para sincronizar eventos y planes."
+            value=saved_settings.get("calendar_ics_url", ""),
+            placeholder="Configurado vía secrets.toml" if settings.get("calendar_ics_url") and not saved_settings.get("calendar_ics_url") else "https://calendar.google.com/calendar/ical/.../basic.ics",
+            help="Enlace privado .ics obtenido desde Google Calendar. Si lo dejas vacío, se usará el definido en secrets.toml."
         )
 
         if st.form_submit_button("💾 Guardar Configuración", type="primary"):
@@ -926,6 +1013,7 @@ with tab_ajustes:
                 "recipients": recipients.strip()
             }
             storage.update_settings(new_settings)
+            cached_fetch_calendar_events.clear()
             st.success("¡Configuración guardada correctamente en el sistema!")
             st.rerun()
 

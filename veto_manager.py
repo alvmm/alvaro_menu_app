@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from menu_generator import find_alternative_dish
+from holidays_manager import now_madrid
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,8 @@ def get_veto_window_status(now: datetime = None) -> tuple[bool, str, datetime]:
     Retorna: (is_open: bool, status_msg: str, target_datetime: datetime)
     """
     if now is None:
-        now = datetime.now()
+        now = now_madrid()
+
 
     weekday = now.weekday()  # Lunes=0, ..., Sábado=5, Domingo=6
 
@@ -90,9 +92,16 @@ def apply_veto(user_name: str, day_name: str, meal_type: str, current_menu: list
     old_dish = day_entry.get(meal_key)
     old_dish_name = old_dish.get("name", "Plato anterior") if old_dish else "Ninguno"
 
-    # Buscar alternativa válida respetando el congelador y días festivos
+    # Buscar alternativa válida respetando el congelador, días festivos y excluyendo el plato vetado
     is_festive = day_entry.get("is_holiday", False) or (day_name.lower() in ["sábado", "sabado", "domingo"])
-    alternative_dish = find_alternative_dish(dishes_list, meal_key, current_menu, freezer_data=freezer_data, is_festive=is_festive)
+    alternative_dish = find_alternative_dish(
+        dishes_list,
+        meal_key,
+        current_menu,
+        freezer_data=freezer_data,
+        is_festive=is_festive,
+        excluded_dish_name=old_dish_name
+    )
     if not alternative_dish:
         return False, current_menu, vetos_state, "No hay platos alternativos disponibles en la base de datos.", None
 
@@ -115,7 +124,7 @@ def apply_veto(user_name: str, day_name: str, meal_type: str, current_menu: list
         "meal_type": meal_key.capitalize(),
         "old_dish": old_dish_name,
         "new_dish": alternative_dish["name"],
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
+        "timestamp": now_madrid().strftime("%Y-%m-%d %H:%M")
     })
     updated_vetos["history"] = history
 

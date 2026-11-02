@@ -1,8 +1,10 @@
+import html as html_lib
 import smtplib
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime
+from holidays_manager import now_madrid
+from menu_generator import get_current_menu_cycle_key
 
 logger = logging.getLogger(__name__)
 
@@ -10,23 +12,25 @@ def generate_menu_html(menu_data, title="Menú Semanal para Álvaro y Ana"):
     """Genera un correo electrónico en formato HTML elegante con tabla de calendario."""
     html_rows = ""
     for entry in menu_data:
-        day = entry.get("day", "")
+        day = html_lib.escape(str(entry.get("day", "")))
+        date_str_day = html_lib.escape(str(entry.get("date_str", "")))
+        day_label = f"{day} <span style='font-weight:normal; font-size:12px;'>({date_str_day})</span>" if date_str_day else day
         comida = entry.get("comida", {})
         cena = entry.get("cena", {})
         
-        comida_name = comida.get("name", "No asignado")
-        comida_ing = comida.get("ingredients", "")
+        comida_name = html_lib.escape(str(comida.get("name", "No asignado")))
+        comida_ing = html_lib.escape(str(comida.get("ingredients", "")))
         
-        cena_name = cena.get("name", "No asignado")
-        cena_ing = cena.get("ingredients", "")
+        cena_name = html_lib.escape(str(cena.get("name", "No asignado")))
+        cena_ing = html_lib.escape(str(cena.get("ingredients", "")))
 
         is_h = entry.get("is_holiday", False)
-        h_name = entry.get("holiday_name", "")
+        h_name = html_lib.escape(str(entry.get("holiday_name") or ""))
         h_badge = f'<br><span style="color: #D97706; font-size: 11px; font-weight: normal;">🎉 {h_name}</span>' if is_h and h_name else ''
 
         html_rows += f"""
         <tr style="border-bottom: 1px solid #E2E8F0;">
-            <td style="padding: 12px; font-weight: bold; color: #2B6CB0; background-color: {'#FEF3C7' if is_h else '#EDF2F7'}; text-align: center;">{day}{h_badge}</td>
+            <td style="padding: 12px; font-weight: bold; color: #2B6CB0; background-color: {'#FEF3C7' if is_h else '#EDF2F7'}; text-align: center;">{day_label}{h_badge}</td>
             <td style="padding: 12px; vertical-align: top;">
                 <div style="font-weight: bold; color: #2D3748; font-size: 15px;">☀️ {comida_name}</div>
                 <div style="font-size: 12px; color: #718096; margin-top: 4px;"><em>Ingredientes:</em> {comida_ing}</div>
@@ -38,21 +42,22 @@ def generate_menu_html(menu_data, title="Menú Semanal para Álvaro y Ana"):
         </tr>
         """
 
-    now = datetime.now()
-    week_num = now.isocalendar()[1]
-    date_str = now.strftime("%d/%m/%Y")
+    now = now_madrid()
+    _, cycle_desc = get_current_menu_cycle_key(now)
+    safe_title = html_lib.escape(str(title))
+    safe_cycle_desc = html_lib.escape(cycle_desc)
 
     html = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="utf-8">
-        <title>{title}</title>
+        <title>{safe_title}</title>
     </head>
     <body style="font-family: Arial, sans-serif; background-color: #F7FAFC; padding: 20px; color: #1A202C;">
         <div style="max-width: 650px; margin: 0 auto; background: #FFFFFF; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <h2 style="color: #2B6CB0; margin-top: 0; text-align: center;">🍽️ {title}</h2>
-            <p style="text-align: center; color: #4A5568; font-size: 14px;">Generado automáticamente para la <strong>Semana {week_num}</strong> del año (semana del <strong>{date_str}</strong>).</p>
+            <h2 style="color: #2B6CB0; margin-top: 0; text-align: center;">🍽️ {safe_title}</h2>
+            <p style="text-align: center; color: #4A5568; font-size: 14px;">Planificación para la <strong>{safe_cycle_desc}</strong>.</p>
             
             <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px;">
                 <thead>
@@ -83,10 +88,9 @@ def generate_menu_html(menu_data, title="Menú Semanal para Álvaro y Ana"):
 
 def generate_menu_text(menu_data):
     """Genera el texto plano para clientes de correo sin soporte HTML."""
-    now = datetime.now()
-    week_num = now.isocalendar()[1]
-    date_str = now.strftime('%d/%m/%Y')
-    text = f"=== MENÚ SEMANAL PARA ÁLVARO Y ANA ===\nSemana: Semana {week_num} del año (Fecha: {date_str})\n\n"
+    now = now_madrid()
+    _, cycle_desc = get_current_menu_cycle_key(now)
+    text = f"=== MENÚ SEMANAL PARA ÁLVARO Y ANA ===\nPeriodo: {cycle_desc}\n\n"
     for entry in menu_data:
         day = entry.get("day", "")
         comida = entry.get("comida", {}).get("name", "N/A")
@@ -114,10 +118,9 @@ def send_weekly_menu_email(smtp_config: dict, menu_data: list, is_test: bool = F
         logger.warning(msg)
         return False, msg
 
-    now = datetime.now()
-    week_num = now.isocalendar()[1]
-    date_str = now.strftime('%d/%m/%Y')
-    subject = f"🧪 [Prueba] Menú Semanal Álvaro & Ana - Semana {week_num}" if is_test else f"🍽️ Menú Semanal Álvaro & Ana - Semana {week_num} ({date_str})"
+    now = now_madrid()
+    _, cycle_desc = get_current_menu_cycle_key(now)
+    subject = f"🧪 [Prueba] Menú Semanal Álvaro & Ana - {cycle_desc}" if is_test else f"🍽️ Menú Semanal Álvaro & Ana - {cycle_desc}"
     
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject

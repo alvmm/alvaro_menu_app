@@ -1,2 +1,8 @@
-streamlit>=1.35.0
-pandas>=2.0.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+toml>=0.10.2
+icalendar>=5.0.0
+tzdata>=2024.1
+httpx>=0.27.0
+
+

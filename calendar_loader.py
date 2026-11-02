@@ -4,6 +4,8 @@ import urllib.error
 import logging
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
+from holidays_manager import now_madrid
+
 
 logger = logging.getLogger(__name__)
 
@@ -118,13 +120,33 @@ def fetch_calendar_events(ics_url: str, timeout: int = 10) -> list[dict]:
     events.sort(key=lambda x: x["start"] if x["start"] else datetime.min)
     return events
 
+def _event_occurs_on_date(ev: dict, target_date: date) -> bool:
+    """Comprueba si un evento (de un día o de varios días) tiene lugar en target_date."""
+    ev_start = ev.get("start")
+    if not ev_start:
+        return False
+    start_date = ev_start.date() if isinstance(ev_start, datetime) else ev_start
+
+    ev_end = ev.get("end")
+    if not ev_end:
+        return start_date == target_date
+    end_date = ev_end.date() if isinstance(ev_end, datetime) else ev_end
+
+    if ev.get("is_all_day") and end_date > start_date:
+        # En RFC 5545, DTEND para eventos VALUE=DATE es exclusivo
+        last_inclusive_date = end_date - timedelta(days=1)
+    else:
+        last_inclusive_date = max(start_date, end_date)
+
+    return start_date <= target_date <= last_inclusive_date
+
 def get_events_for_current_week(events: list[dict], now: datetime = None) -> dict[str, list[dict]]:
     """
     Agrupa los eventos correspondientes a cada día de la semana actual (Lunes a Domingo).
     Retorna un diccionario: {'Lunes': [evento1, ...], 'Martes': [...], ...}
     """
     if now is None:
-        now = datetime.now()
+        now = now_madrid()
 
     # Calcular el Lunes de la semana actual (Lunes=0, ..., Domingo=6)
     monday = (now - timedelta(days=now.weekday())).date()
@@ -132,14 +154,7 @@ def get_events_for_current_week(events: list[dict], now: datetime = None) -> dic
     week_map = {}
     for i, day_name in enumerate(DAYS_SPANISH):
         day_date = monday + timedelta(days=i)
-        day_events = []
-        for ev in events:
-            ev_dt = ev.get("start")
-            if not ev_dt:
-                continue
-            ev_date = ev_dt.date() if isinstance(ev_dt, datetime) else ev_dt
-            if ev_date == day_date:
-                day_events.append(ev)
+        day_events = [ev for ev in events if _event_occurs_on_date(ev, day_date)]
         week_map[day_name] = {
             "date": day_date,
             "date_str": day_date.strftime("%d/%m"),
@@ -156,7 +171,7 @@ def get_events_for_menu_week(events: list[dict], now: datetime = None) -> dict[s
     Si hoy es Lunes a Viernes (semana en curso), es el Lunes de esta semana al Domingo.
     """
     if now is None:
-        now = datetime.now()
+        now = now_madrid()
 
     # Si es fin de semana (Sábado=5, Domingo=6), el menú aplica al Lunes siguiente
     if now.weekday() == 5:
@@ -169,14 +184,7 @@ def get_events_for_menu_week(events: list[dict], now: datetime = None) -> dict[s
     week_map = {}
     for i, day_name in enumerate(DAYS_SPANISH):
         day_date = monday + timedelta(days=i)
-        day_events = []
-        for ev in events:
-            ev_dt = ev.get("start")
-            if not ev_dt:
-                continue
-            ev_date = ev_dt.date() if isinstance(ev_dt, datetime) else ev_dt
-            if ev_date == day_date:
-                day_events.append(ev)
+        day_events = [ev for ev in events if _event_occurs_on_date(ev, day_date)]
         week_map[day_name] = {
             "date": day_date,
             "date_str": day_date.strftime("%d/%m"),

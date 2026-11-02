@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1E3A8A" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Menú AyA" />
+  <title>Menú Semanal • Álvaro & Ana</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="toast-container" class="toast-container"></div>
+
+  <div class="app-layout">
+    <!-- Sidebar (Escritorio) -->
+    <aside class="sidebar">
+      <div class="brand-box">
+        <div class="brand-logo">🍽️</div>
+        <div>
+          <div class="brand-title">Menú AyA</div>
+          <div class="brand-sub">Álvaro & Ana • v2.0 Pro</div>
+        </div>
+      </div>
+
+      <nav class="nav-menu" id="desktop-nav">
+        <button class="nav-btn active" data-tab="menu">
+          <span class="nav-btn-left">📅 Menú Semanal</span>
+        </button>
+        <button class="nav-btn" data-tab="shopping">
+          <span class="nav-btn-left">🛒 Lista de la Compra</span>
+          <span class="nav-pill" id="nav-pill-shopping">0</span>
+        </button>
+        <button class="nav-btn" data-tab="freezer">
+          <span class="nav-btn-left">🧊 Congelador</span>
+          <span class="nav-pill" id="nav-pill-freezer">0</span>
+        </button>
+        <button class="nav-btn" data-tab="vetos">
+          <span class="nav-btn-left">🚫 Sistema de Vetos</span>
+        </button>
+        <button class="nav-btn" data-tab="coupons">
+          <span class="nav-btn-left">🎟️ Cupones & Planes</span>
+          <span class="nav-pill" id="nav-pill-coupons">0</span>
+        </button>
+        <button class="nav-btn" data-tab="dishes">
+          <span class="nav-btn-left">🥗 Catálogo de Recetas</span>
+          <span class="nav-pill" id="nav-pill-dishes">0</span>
+        </button>
+        <button class="nav-btn" data-tab="settings">
+          <span class="nav-btn-left">⚙️ Ajustes & Correo</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Plazo de Cambios</div>
+        <div id="sidebar-window-card" class="window-status-card open">
+          Cargando estado...
+        </div>
+        <label class="toggle-label">
+          <input type="checkbox" id="chk-override-window" />
+          <span>🔓 Permitir fuera de plazo</span>
+        </label>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Acciones Rápidas</div>
+        <button class="btn btn-primary" id="btn-sync-sheets" style="width:100%;">
+          🔄 Sincronizar Google Sheets
+        </button>
+        <button class="btn btn-outline" id="btn-send-email" style="width:100%; background:#1E293B; color:#F8FAFC; border-color:#334155;">
+          ✉️ Enviar Menú por Email
+        </button>
+        <a href="/menu_semanal_AyA.ics" download="menu_semanal_AyA.ics" class="btn btn-outline" style="width:100%; background:#1E293B; color:#F8FAFC; border-color:#334155;">
+          📅 Descargar .ics Calendario
+        </a>
+      </div>
+    </aside>
+
+    <!-- Área Principal -->
+    <main class="main-area">
+      <!-- Cabecera Hero -->
+      <header class="hero-header">
+        <div>
+          <h1 class="hero-title">🍽️ Planificador de Menú Semanal</h1>
+          <p class="hero-subtitle" id="hero-cycle-desc">Cargando planificación...</p>
+        </div>
+        <div class="hero-actions">
+          <button class="btn btn-glass" id="btn-hero-regen">🎲 Regenerar Menú</button>
+          <button class="btn btn-glass" id="btn-hero-sync">🔄 Sincronizar</button>
+          <a href="/menu_semanal_AyA.ics" download="menu_semanal_AyA.ics" class="btn btn-glass">📅 .ICS</a>
+        </div>
+      </header>
+
+      <!-- Alerta de Cupones por Caducar -->
+      <div id="expiring-alert-banner" style="display:none; margin-bottom:18px;" class="holiday-banner"></div>
+
+      <!-- Barra de 5 Métricas KPI -->
+      <section class="metrics-grid">
+        <div class="metric-box">
+          <span class="metric-label">👨 Vetos Álvaro</span>
+          <span class="metric-value" id="kpi-alvaro-vetos">- / 2</span>
+          <span class="metric-sub" style="color:var(--primary);">Disponibles</span>
+        </div>
+        <div class="metric-box">
+          <span class="metric-label">👩 Vetos Ana</span>
+          <span class="metric-value" id="kpi-ana-vetos">- / 2</span>
+          <span class="metric-sub" style="color:#DB2777;">Disponibles</span>
+        </div>
+        <div class="metric-box">
+          <span class="metric-label">🎲 Regen. Manual</span>
+          <span class="metric-value" id="kpi-manual-regen">- / 1</span>
+          <span class="metric-sub" style="color:var(--text-muted);">Límite semanal</span>
+        </div>
+        <div class="metric-box">
+          <span class="metric-label">🧊 Congelador</span>
+          <span class="metric-value" id="kpi-freezer">-</span>
+          <span class="metric-sub" style="color:var(--success);">Con existencias</span>
+        </div>
+        <div class="metric-box">
+          <span class="metric-label">🎟️ Cupones</span>
+          <span class="metric-value" id="kpi-coupons">-</span>
+          <span class="metric-sub" id="kpi-coupons-sub" style="color:var(--text-muted);">Pendientes</span>
+        </div>
+      </section>
+
+      <!-- VISTA 1: MENÚ SEMANAL -->
+      <section id="tab-menu" class="tab-view">
+        <div class="panel-card" style="padding:14px 18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div id="menu-window-banner" style="font-size:0.88rem; font-weight:600;"></div>
+          <label style="font-size:0.84rem; font-weight:600; display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="checkbox" id="chk-override-window-mobile" />
+            <span>🔓 Permitir cambios fuera de plazo</span>
+          </label>
+        </div>
+
+        <div id="menu-days-container" class="days-list"></div>
+      </section>
+
+      <!-- VISTA 2: LISTA DE LA COMPRA -->
+      <section id="tab-shopping" class="tab-view" style="display:none;">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">🛒 Lista de la Compra Consolidada</h2>
+              <p style="font-size:0.85rem; color:var(--text-muted);" id="shopping-summary-text">
+                Toca cualquier ingrediente en el supermercado para tacharlo al instante.
+              </p>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn btn-outline btn-sm" id="btn-copy-whatsapp">📋 Copiar pendientes para WhatsApp</button>
+              <button class="btn btn-danger-soft btn-sm" id="btn-clear-shopping">🧹 Desmarcar todos</button>
+            </div>
+          </div>
+
+          <div id="shopping-items-grid" class="shopping-grid"></div>
+        </div>
+
+        <div class="panel-card">
+          <h3 class="panel-title" style="margin-bottom:12px;">🔍 Desglose Plato por Plato</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Día</th>
+                  <th>Plato</th>
+                  <th>Ingredientes</th>
+                </tr>
+              </thead>
+              <tbody id="shopping-breakdown-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- VISTA 3: CONGELADOR -->
+      <section id="tab-freezer" class="tab-view" style="display:none;">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">🧊 Control de Congelador (Google Sheets)</h2>
+              <p style="font-size:0.85rem; color:var(--text-muted);">
+                Los alimentos disponibles habilitan sus platos en el generador y en los vetos. Cambia su estado en 1 clic.
+              </p>
+            </div>
+            <button class="btn btn-primary btn-sm" id="btn-sync-freezer">🔄 Sincronizar con Google Sheets</button>
+          </div>
+
+          <div id="freezer-items-grid" class="freezer-grid"></div>
+        </div>
+      </section>
+
+      <!-- VISTA 4: SISTEMA DE VETOS -->
+      <section id="tab-vetos" class="tab-view" style="display:none;">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">🚫 Estado e Historial de Vetos</h2>
+              <p style="font-size:0.85rem; color:var(--text-muted);">
+                Cada persona dispone de 2 vetos semanales entre el sábado y el domingo a las 16:00.
+              </p>
+            </div>
+            <button class="btn btn-outline btn-sm" id="btn-reset-vetos">🔄 Reiniciar Vetos a 2/2</button>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha / Hora</th>
+                  <th>Persona</th>
+                  <th>Día</th>
+                  <th>Comida / Cena</th>
+                  <th>Plato Retirado</th>
+                  <th>Nuevo Plato</th>
+                </tr>
+              </thead>
+              <tbody id="vetos-history-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- VISTA 5: CUPONES E INVITACIONES -->
+      <section id="tab-coupons" class="tab-view" style="display:none;">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">🎟️ Cupones e Invitaciones para Comer Fuera</h2>
+              <p style="font-size:0.85rem; color:var(--text-muted);">
+                Gestiona cenas pendientes, promociones e invitaciones con aviso de vencimiento.
+              </p>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <select id="filter-coupon-user" class="input" style="width:auto;">
+                <option value="Todos">Todos</option>
+                <option value="Álvaro">Álvaro</option>
+                <option value="Ana">Ana</option>
+              </select>
+              <select id="filter-coupon-status" class="input" style="width:auto;">
+                <option value="Todos">Todos los estados</option>
+                <option value="pendiente">Pendientes</option>
+                <option value="usado">Canjeados</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="coupons-list-grid" class="coupons-grid"></div>
+        </div>
+
+        <div class="panel-card">
+          <h3 class="panel-title" style="margin-bottom:14px;">➕ Añadir Nueva Invitación o Cupón</h3>
+          <form id="form-create-coupon">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Título de la invitación / cupón *</label>
+                <input type="text" id="cp-title" class="input" placeholder="Ej: Cena de Sushi para 2" required />
+              </div>
+              <div class="form-group">
+                <label>Restaurante o lugar</label>
+                <input type="text" id="cp-restaurant" class="input" placeholder="Ej: Sushita Club / Goiko" />
+              </div>
+              <div class="form-group">
+                <label>¿A quién pertenece / Quién invita?</label>
+                <select id="cp-user" class="input">
+                  <option value="Álvaro">Álvaro</option>
+                  <option value="Ana">Ana</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Fecha de caducidad</label>
+                <input type="date" id="cp-date" class="input" required />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Notas o condiciones</label>
+              <input type="text" id="cp-notes" class="input" placeholder="Ej: Válido de lunes a jueves en local." />
+            </div>
+            <button type="submit" class="btn btn-primary">💾 Guardar Cupón</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- VISTA 6: CATÁLOGO DE RECETAS -->
+      <section id="tab-dishes" class="tab-view" style="display:none;">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">🥗 Base de Datos de Recetas</h2>
+              <p style="font-size:0.85rem; color:var(--text-muted);" id="dishes-count-subtitle">
+                Catálogo completo de platos e ingredientes.
+              </p>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <input type="text" id="search-dishes-input" class="input" placeholder="🔍 Buscar plato o ingrediente..." style="width:220px;" />
+              <select id="filter-dishes-type" class="input" style="width:auto;">
+                <option value="Todos">Todos</option>
+                <option value="comida">Comida</option>
+                <option value="cena">Cena</option>
+                <option value="ambas">Ambas</option>
+              </select>
+              <button class="btn btn-primary btn-sm" id="btn-open-new-dish">➕ Nuevo Plato</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Plato</th>
+                  <th>Momento</th>
+                  <th>Ingredientes</th>
+                  <th style="width:150px;">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="dishes-catalog-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- VISTA 7: AJUSTES & CORREO -->
+      <section id="tab-settings" class="tab-view" style="display:none;">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">⚙️ Configuración del Sistema</h2>
+              <p style="font-size:0.85rem; color:var(--text-muted);">
+                🔒 Las credenciales definidas en variables de entorno o <code>secrets.toml</code> se aplican automáticamente en memoria sin exponerse en <code>menu_app_data.json</code>.
+              </p>
+            </div>
+            <button class="btn btn-outline btn-sm" id="btn-test-email">🧪 Enviar Correo de Prueba</button>
+          </div>
+
+          <form id="form-settings">
+            <h4 style="margin: 10px 0;">1. Google Sheets (Platos y Congelador)</h4>
+            <div class="form-group">
+              <label>Enlace del archivo de Google Sheets</label>
+              <input type="text" id="set-sheet-url" class="input" />
+            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>GID Pestaña Platos</label>
+                <input type="text" id="set-gid-dishes" class="input" />
+              </div>
+              <div class="form-group">
+                <label>GID Pestaña Congelador</label>
+                <input type="text" id="set-gid-freezer" class="input" />
+              </div>
+            </div>
+
+            <h4 style="margin: 16px 0 10px 0;">2. Servidor de Correo (SMTP)</h4>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Servidor SMTP</label>
+                <input type="text" id="set-smtp-host" class="input" />
+              </div>
+              <div class="form-group">
+                <label>Puerto SMTP</label>
+                <input type="number" id="set-smtp-port" class="input" />
+              </div>
+              <div class="form-group">
+                <label>Usuario / Email emisor</label>
+                <input type="text" id="set-smtp-user" class="input" />
+              </div>
+              <div class="form-group">
+                <label>Contraseña de Aplicación (Gmail)</label>
+                <input type="password" id="set-smtp-pass" class="input" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Destinatarios (separados por comas)</label>
+              <input type="text" id="set-recipients" class="input" />
+            </div>
+
+            <h4 style="margin: 16px 0 10px 0;">3. Calendario Compartido AyA (.ics)</h4>
+            <div class="form-group">
+              <label>Enlace secreto iCal (.ics) de Google Calendar</label>
+              <input type="text" id="set-calendar-ics" class="input" />
+            </div>
+
+            <button type="submit" class="btn btn-primary">💾 Guardar Configuración</button>
+          </form>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Barra de Navegación Inferior (Móvil iOS / Android) -->
+  <nav class="mobile-nav" id="mobile-nav">
+    <button class="mobile-nav-btn active" data-tab="menu">
+      <span class="icon">📅</span>
+      <span>Menú</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="shopping">
+      <span class="icon">🛒</span>
+      <span>Compra</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="freezer">
+      <span class="icon">🧊</span>
+      <span>Congelador</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="coupons">
+      <span class="icon">🎟️</span>
+      <span>Cupones</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="dishes">
+      <span class="icon">🥗</span>
+      <span>Recetas</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="settings">
+      <span class="icon">⚙️</span>
+      <span>Ajustes</span>
+    </button>
+  </nav>
+
+  <!-- MODAL: APLICAR VETO -->
+  <div id="modal-veto" class="modal-backdrop">
+    <div class="modal-card">
+      <h3 class="panel-title" id="modal-veto-title">🚫 Vetar plato</h3>
+      <p style="font-size:0.86rem; color:var(--text-secondary); margin: 8px 0 16px 0;" id="modal-veto-desc"></p>
+      <div class="form-group">
+        <label>¿Quién aplica el veto?</label>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:6px;">
+          <button type="button" class="btn btn-outline" id="btn-confirm-veto-alvaro">👨 Álvaro</button>
+          <button type="button" class="btn btn-outline" id="btn-confirm-veto-ana">👩 Ana</button>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; margin-top:16px;">
+        <button type="button" class="btn btn-outline btn-sm" id="btn-close-veto-modal">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CREAR / EDITAR PLATO -->
+  <div id="modal-dish" class="modal-backdrop">
+    <div class="modal-card">
+      <h3 class="panel-title" id="modal-dish-title" style="margin-bottom:14px;">🥗 Plato</h3>
+      <form id="form-modal-dish">
+        <input type="hidden" id="dish-edit-id" />
+        <div class="form-group">
+          <label>Nombre del plato *</label>
+          <input type="text" id="dish-edit-name" class="input" required />
+        </div>
+        <div class="form-group">
+          <label>Momento</label>
+          <select id="dish-edit-type" class="input">
+            <option value="comida">Comida</option>
+            <option value="cena">Cena</option>
+            <option value="ambas">Ambas</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Ingredientes (separados por comas)</label>
+          <textarea id="dish-edit-ingredients" class="input" rows="3" placeholder="Ej: Arroz, pollo, cebolla..."></textarea>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+          <button type="button" class="btn btn-outline" id="btn-close-dish-modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">💾 Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

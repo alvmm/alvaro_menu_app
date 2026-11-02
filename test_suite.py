@@ -212,5 +212,88 @@ class TestAlvaroMenuApp(unittest.TestCase):
         self.assertIn("calendar.google.com", url)
         self.assertIn("20261012T140000", url)
 
+    def test_effective_settings_do_not_pollute_json(self):
+        fake_secrets = {
+            "smtp": {"user": "secret@gmail.com", "password": "secret_password_123"},
+            "integrations": {"calendar_ics_url": "https://example.com/secret.ics"}
+        }
+        effective = self.storage.get_effective_settings(fake_secrets)
+        self.assertEqual(effective["smtp_password"], "secret_password_123")
+        self.assertEqual(effective["calendar_ics_url"], "https://example.com/secret.ics")
+        # El archivo JSON local no debe haber almacenado el secreto
+        saved = self.storage.get_settings()
+        self.assertEqual(saved["smtp_password"], "")
+        self.assertEqual(saved["calendar_ics_url"], "")
+
+    def test_ingredients_fallback_and_enrichment(self):
+        from csv_loader import enrich_dishes_ingredients
+        raw_dishes = [{"id": "4", "name": "Lentejas", "type": "comida", "ingredients": ""}]
+        enriched = enrich_dishes_ingredients(raw_dishes)
+        self.assertIn("Lentejas", enriched[0]["ingredients"])
+
+    def test_veto_never_returns_same_dish(self):
+        small_pool = [
+            {"id": "1", "name": "Plato A", "type": "comida", "ingredients": "Arroz"},
+            {"id": "2", "name": "Plato B", "type": "comida", "ingredients": "Pasta"}
+        ]
+        # Ambos platos ya están en el menú actual (unused_pool vacío)
+        current_menu = [
+            {"day": "Lunes", "comida": small_pool[0], "cena": small_pool[1]},
+            {"day": "Martes", "comida": small_pool[1], "cena": small_pool[0]}
+        ]
+        for _ in range(20):
+            alt = find_alternative_dish(small_pool, "comida", current_menu, excluded_dish_name="Plato A")
+            self.assertEqual(alt["name"], "Plato B")
+
+    def test_coupon_pareja_normalization(self):
+        from coupon_manager import get_coupons_by_user
+        legacy_coupons = [
+            {"id": "1", "user": "Pareja", "title": "Cena", "status": "pendiente"},
+            {"id": "2", "user": "Álvaro", "title": "Comida", "status": "pendiente"}
+        ]
+        ana_coupons = get_coupons_by_user(legacy_coupons, "Ana")
+        self.assertEqual(len(ana_coupons), 1)
+        self.assertEqual(ana_coupons[0]["id"], "1")
+
+    def test_multiday_calendar_events(self):
+        sat = datetime(2026, 10, 10, 12, 0)
+        # Evento de día completo de Viernes 16/10 a Domingo 18/10 (en RFC 5545 DTEND es exclusivo: 19/10)
+        multiday_events = [
+            {
+                "summary": "Escapada rural",
+                "start": datetime(2026, 10, 16),
+                "end": datetime(2026, 10, 19),
+                "is_all_day": True
+            }
+        ]
+        week_map = get_events_for_menu_week(multiday_events, now=sat)
+        self.assertEqual(len(week_map["Jueves"]["events"]), 0)
+        self.assertEqual(len(week_map["Viernes"]["events"]), 1)
+        self.assertEqual(len(week_map["Sábado"]["events"]), 1)
+        self.assertEqual(len(week_map["Domingo"]["events"]), 1)
+
+    def test_shopping_checked_persistence(self):
+        self.assertEqual(self.storage.get_shopping_checked(), [])
+        self.storage.save_shopping_checked(["Arroz", "Tomate"])
+        reloaded = StorageManager(filepath=self.test_json)
+        self.assertEqual(reloaded.get_shopping_checked(), ["Arroz", "Tomate"])
+
+    def test_fastapi_server_state_and_endpoints(self):
+        from server import build_application_state, api_download_ics, serve_spa
+        state = build_application_state(self.storage, external_secrets={})
+        self.assertIn("menu", state)
+        self.assertEqual(len(state["menu"]), 7)
+        self.assertIn("shopping", state)
+        self.assertTrue(len(state["shopping"]["ingredients"]) > 0)
+        self.assertIn("metrics", state)
+
+        ics_resp = api_download_ics()
+        self.assertEqual(ics_resp.status_code, 200)
+        self.assertIn(b"BEGIN:VCALENDAR", ics_resp.body)
+
+        spa_resp = serve_spa("")
+        self.assertTrue(hasattr(spa_resp, "path"))
+
+
 if __name__ == "__main__":
     unittest.main()

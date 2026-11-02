@@ -1,8 +1,16 @@
 import uuid
 import logging
 from datetime import datetime, timedelta
+from holidays_manager import now_madrid
 
 logger = logging.getLogger(__name__)
+
+def normalize_coupon_user(user: str) -> str:
+    """Normaliza el nombre del propietario del cupón a 'Álvaro' o 'Ana' (incluyendo legacy 'Pareja')."""
+    u = str(user or "").strip().lower()
+    if "álvaro" in u or "alvaro" in u:
+        return "Álvaro"
+    return "Ana"
 
 def create_coupon(user: str, title: str, restaurant: str, expiration_date: str, notes: str = "") -> dict:
     """Crea un nuevo diccionario de cupón/invitación."""
@@ -16,7 +24,7 @@ def create_coupon(user: str, title: str, restaurant: str, expiration_date: str, 
 
     return {
         "id": str(uuid.uuid4()),
-        "user": "Álvaro" if "álvaro" in user.lower() or "alvaro" in user.lower() else "Ana",
+        "user": normalize_coupon_user(user),
         "title": title.strip(),
         "restaurant": restaurant.strip(),
         "expiration_date": formatted_date,
@@ -49,8 +57,8 @@ def get_coupons_by_user(coupons_list: list, user_filter: str = "todos") -> list:
     """Filtra cupones según el usuario ('Álvaro', 'Ana' o 'todos')."""
     if not user_filter or user_filter.lower() in ["todos", "all", "compartido"]:
         return coupons_list
-    target_user = "Álvaro" if "álvaro" in user_filter.lower() or "alvaro" in user_filter.lower() else "Ana"
-    return [c for c in coupons_list if c.get("user") == target_user]
+    target_user = normalize_coupon_user(user_filter)
+    return [c for c in coupons_list if normalize_coupon_user(c.get("user", "")) == target_user]
 
 def check_expiration_warning(expiration_date_str: str, threshold_days: int = 7) -> tuple[str, str, str]:
     """
@@ -64,7 +72,7 @@ def check_expiration_warning(expiration_date_str: str, threshold_days: int = 7) 
     
     try:
         exp_dt = datetime.strptime(expiration_date_str.strip(), "%Y-%m-%d").date()
-        today = datetime.now().date()
+        today = now_madrid().date()
         days_left = (exp_dt - today).days
 
         if days_left < 0:
